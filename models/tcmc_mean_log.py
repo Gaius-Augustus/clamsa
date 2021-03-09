@@ -32,7 +32,7 @@ def create_model(forest,
     sequence_lengths = tf.keras.Input(shape = (1,), name = "sequence_lengths", dtype = tf.int64) # keras inputs doesn't allow shape [None]
 
     # define the layers
-    encoding_layer = Encode(alphabet_size, new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
+    encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
     tcmc_layer = TCMCProbability((tcmc_models,), forest, name="P_sequence_columns")
     mean_log_layer = SequenceLogLikelihood(name='mean_log_P', dtype=tf.float64)
  
@@ -53,9 +53,10 @@ def create_model(forest,
 
     # assemble the computational graph
     if new_alphabet_size > 0:
-        sequences = encoding_layer(sequences)
-
-    P = tcmc_layer(sequences, clade_ids)
+        sequences2 = encoding_layer(sequences)
+    else:
+        sequences2 = sequences
+    P = tcmc_layer(sequences2, clade_ids)
     mean_log_P = mean_log_layer([P, sequence_lengths])
     X = mean_log_P
 
@@ -72,7 +73,7 @@ def create_model(forest,
 
     guesses = guesses_layer(X)
 
-    model = tf.keras.Model(inputs = [sequences, clade_ids ,sequence_lengths], outputs = guesses, name = name)
+    model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = guesses, name = name)
 
     return model
 
@@ -125,23 +126,21 @@ class SequenceLogLikelihood(tf.keras.layers.Layer):
 
 class Encode(tf.keras.layers.Layer):
     """Encoding the alphabet"""
-    def __init__(self, old_size, new_size, **kwargs):
-        self.old_size = old_size
+    def __init__(self, new_size, **kwargs):
         self.new_size = new_size
-        super(ResizeAlphabet, self).__init__(**kwargs)
+        super(Encode, self).__init__(**kwargs)
 
-    def build(self, input_shape):     
-        self.resize_matrix = self.add_weight(shape = (self.old_size, self.new_size), name = "resize_matrix", dtype = tf.float64, initializer='uniform', trainable=True)
-        super(ResizeAlphabet, self).build(input_shape)
+    def build(self, input_shape):
+        self.resize_matrix = self.add_weight(shape = (input_shape[-1], self.new_size), name = "resize_matrix", dtype = tf.float64, initializer='uniform', trainable=True)
+        super(Encode, self).build(input_shape)
 
     @tf.function
     def call(self, inputs):
         prop_matrix = tf.keras.activations.softmax(self.resize_matrix)
-        new_sequences = tf.matmul(inputs, prop_matrix)
-        return new_sequences
+        return tf.matmul(inputs, prop_matrix)
 
     def get_config(self):
-        base_config = super(ResizeAlphabet, self).get_config()
+        base_config = super(Encode, self).get_config()
         return base_config
 
     @classmethod
