@@ -10,6 +10,7 @@ import numpy as np
 import collections
 from functools import partial
 import itertools
+import gzip
 
 import sys
 sys.path.append("..")
@@ -157,7 +158,8 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
     
     species = [msa_converter.leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
     
-    entries = [rec for rec in SeqIO.parse(fasta_path, "fasta")]
+    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
+        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
     # parse the species names
     spec_in_file = [e.id.split('|')[0] for e in entries]
 
