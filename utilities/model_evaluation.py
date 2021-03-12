@@ -257,7 +257,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
 
             # filter fasta files that have no valid reference clade
             cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict=trans_dict, remove_stop_rows=remove_stop_rows, 
-                                                        use_amino_acids = use_amino_acids, tuple_length = tuple_length)
+                                                        use_amino_acids = use_amino_acids, tuple_length = tuple_length, use_codons = use_codons)
             if cid == -1:
                 path_ids_without_reference_clade.add(f)
                 continue

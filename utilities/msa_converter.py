@@ -520,8 +520,11 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     tuple_length = 3 if use_codons else tuple_length
 
     trans_dict = {} if trans_dict is None else trans_dict
-    species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
-    
+    if use_amino_acids:
+        species = [leaf_order(c) for c in clades] if clades != None else []
+    else:
+        species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
+
     with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
         entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
     # parse the species names
@@ -556,7 +559,11 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
             pass # leave frame at 0 by default
 
     # read the sequences and trim them if wanted
-    sequences = [str(rec.seq).lower() for rec in entries]
+    if not use_amino_acids:
+        sequences = [str(rec.seq).lower() for rec in entries]
+    else:
+        sequences = [str(rec.seq) for rec in entries]
+
     sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
     msa = MSA(
