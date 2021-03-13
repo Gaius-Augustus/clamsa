@@ -8,6 +8,18 @@ conda install numpy tensorflow-gpu regex biopython
 conda install -c bioconda python-newick
 conda install -c conda-forge tqdm protobuf3-to-dict
 ```
+# Example prediction
+
+```console
+./clamsa.py predict fasta  examples/msa2.lst  \
+   --clades examples/{fly,vertebrate,yeast}.nwk  \
+   --use_codons  \
+   --log_basedir logs/  --saved_weights_basedir saved_weights/  \
+    --model_ids '{
+      "fly_vert_yeast-logreg-M3" :  "2021.02.14--20.47.20"
+   }'   --out_csv /dev/stdout
+```
+
 
 # Example Conversion
 Example conversion parameters for our usual flie dataset from augustus:

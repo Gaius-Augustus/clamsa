@@ -1,0 +1,14 @@
+>dmel|y=1|phase=0|3L:1351186-1351471||originally:f=0,strand=+
+atgctga---c---ccgcgtgttccgcctagtgcacgacaggcgcctgagtgtgcctgtcctgcgttgcttccaccacgagttctccaagccgccacaacaggcagcgaag---------gg---------cc------aggaaatcgaaggcaatcccgaa--aagacttt---ggttgccggcgtgcaagacaagtacaaaatattccgcgatgaggaagccacggagatttttgatgtggaagaggcacgccaccaggagcagcaacttcc---agagccggacctggagctggatcactattacggcctcaatttaaagc
+>dmoj
+atgataaaaac---gcgtatttttcgattaattcgggatacacgtttaagcgtgcctattttacgtggctttcatcatgaattcagcaaacc---------tgaaccgcagaaaaatgca-----------aaacttgtt-gaa----aaggaacaaca-------atcgtttgtagctggcggcgtgcaaaataaatacaaagtcttccgcgatgatgaagcactggaaatcttcgatgtggaggaggctcgttatcaggagcaagatctgcc---a--c-aagatgcccaagaggatcagtatatgggtcttaatttgaaga
+>dsim
+atgctga---c---ccgcgtgttccgcctggtgcacgacaggcgcctgagtgtgcctgtcctgcgttgcttccaccacgagttctccaagccgccacaacaggcagcaaat---------gg---------cc------aggaaatcgaaggtaatcccgaa--aagacttt---ggttgccggcgtgcaagacaagtacaaaatattccgcgatgaggaggccacggagatttttgatgtagaagaggcgcgccaccaggagcagcaacttcc---agagcag------gagttggatcactattacgggctaaatttaaaga
+>dsec
+atgctga---c---ccgcgtgttccgcctggtgcacgacaggcgcctgagtgtgccggtcctgcgttgcttccaccacgagttctccaagccgccacaacaggcagcgaat---------gg---------cc------aggaaatcgagggtaatcccgaa--aagacttt---ggttgccggcgtgcaagacaagtacaaaatattccgcgatgaggaggccacggagatttttgatatagaagaggcgcgccaccaggagcagcaacttcc---agagcaggaactggagttggatcactattacggactaaatttaaaga
+>dere
+atgctga---c---ccgcgtgttccgcctggttcacgacaggcgcctgagtgtgcctgtcctgcgttgcttccaccacgagttctccaagccgccaccacagccagcgaag---------gg---------cc------aggaaaccgaaggtgatcccgca--aagacttt---ggttgccggcgtgcaggacaagtacaaaatattccgtgatgaggaggccacggagattttcgatgtggaggaggcgcgccatcaggagcaggaactgcc---agagcaggaactggagccggatcactattacggcctaaatttaaaga
+>dyak
+atgctga---c---ccgcgtgttccgcctggttcacgacagacgactgagtgtgcctgtcctgcgttgcttccaccacgagtttacaaagccgccacagcagccagtcaag---------gg---------cc------aggaagtcgaaggcaatcccgca--aagacttt---ggttgccggcgtgcagaacaagtacaaaatattccgtgatgaggaggccacggagatttttgatgtggaggaggcgcgaaatctggagcaagaacttcc---agagcaggaagtggagccggatcagtattacggcctaaacttaaagc
+>dana
+atgctag---ccacacgcgtgttccgattggttcatgacaaacgactcagcgtccccattctgcgctgctttcatcacgagttctccaaaccggaatcaccagcgacgccg---------gc---------ta------aagagaaggaggaaaattccggt--cataatct---agttggaggcgttcagagcaaatacaaaatattccgagatgaaaactcccccgagattttcgatgtggaggaggcccggcaccaggagcacctgctaacggaagagccagaattcgaggaggataaatactatggcttgaatttaaaga
