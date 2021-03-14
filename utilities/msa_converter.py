@@ -512,14 +512,21 @@ def import_augustus_training_file(paths, undersample_neg_by_factor = 1., alphabe
 #
 # This function is currently just written for the fasta header format
 # we generate for phylocsf.
-def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_dict=None, remove_stop_rows=False):
+def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_dict=None, remove_stop_rows=False, use_amino_acids = False, tuple_length = 1):
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
+
+    tuple_length = 3 if use_codons else tuple_length
+
     trans_dict = {} if trans_dict is None else trans_dict
-    species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
-    
-    entries = [rec for rec in SeqIO.parse(fasta_path, "fasta")]
+    if use_amino_acids:
+        species = [leaf_order(c) for c in clades] if clades != None else []
+    else:
+        species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
+
+    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
+        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
     # parse the species names
     spec_in_file = [e.id.split('|')[0] for e in entries]
 
@@ -528,7 +535,7 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     msa_taxon_ids = list(map(translator, spec_in_file))
   
     # compare them with the given references
-    ref_ids = [[(r,i) for r in range(len(species))  for i in range(len(species[r])) if s in species[r][i] ] for s in msa_taxon_ids]
+    ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i] ] for s in msa_taxon_ids]
 
     # check if these are contained in exactly one reference clade
     n_refs = [len(x) for x in ref_ids]
@@ -552,7 +559,11 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
             pass # leave frame at 0 by default
 
     # read the sequences and trim them if wanted
-    sequences = [str(rec.seq).lower() for rec in entries]
+    if not use_amino_acids:
+        sequences = [str(rec.seq).lower() for rec in entries]
+    else:
+        sequences = [str(rec.seq) for rec in entries]
+
     sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
     msa = MSA(
@@ -565,10 +576,12 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
         spec_ids = ref_ids,
         offsets = [],
         sequences = sequences,
+        use_amino_acids = use_amino_acids,
+        tuple_length = tuple_length,
         use_codons = use_codons
     )
     # Use the correct onehot encoded sequences
-    coded_sequences = msa.coded_codon_aligned_sequences if use_codons else msa.coded_sequences
+    coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
 
     # remove all rows with an in-frame stop codon (except last col)
     stops = msa.in_frame_stops
