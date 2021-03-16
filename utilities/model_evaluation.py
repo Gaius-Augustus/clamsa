@@ -144,7 +144,7 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
     # obtain the model with the correct weights
     model = create_model(forest, alphabet_size, **hps)
     weights_path = get_weights_path(trial_id, saved_weights_dir)
-    model.load_weights(weights_path)
+    model.load_weights(weights_path, by_name = True, skip_mismatch = True)
     
     return model
 
