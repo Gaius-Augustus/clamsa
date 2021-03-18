@@ -41,7 +41,7 @@ def train_models(input_dir,
           },
           tuple_length = 1,
           use_amino_acids = False,
-          used_codons = False,
+          use_codons = False,
           model_hyperparameters = {
               "tcmc_rnn": {
                   "tcmc_models": [8,],
@@ -71,10 +71,9 @@ def train_models(input_dir,
     """
     TODO: Write Docstring
     """
-    print ("type of clades:", type(clades))
     # calculate some features from the input
     num_leaves = database_reader.num_leaves(clades)
-    tuple_length = 3 if used_codons else tuple_length
+    tuple_length = 3 if use_codons else tuple_length
     alphabet_size = 4 ** tuple_length if not use_amino_acids else 20 ** tuple_length
 
     # evaluate the split specifications
@@ -90,7 +89,6 @@ def train_models(input_dir,
                 raise Exception(f"Invalid split specification for '{k}': {split_specifications[k]}") from te
 
 
-
     # read the datasets for each wanted basename
     wanted_splits = [split for split in splits.values() if split != None ]
     unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
@@ -98,7 +96,6 @@ def train_models(input_dir,
     if any(['train' not in unmerged_datasets[b] for b in basenames]):
         raise Exception("A 'train' split must be specified!")
 
-    
     # merge the respective splits of each basename
     datasets = {}
     
@@ -128,7 +125,6 @@ def train_models(input_dir,
 
     merge_ds = tf.data.experimental.sample_from_datasets
     datasets = {s: merge_ds([unmerged_datasets[b][s] for b in basenames], weights) for s in splits.keys()}
-        
 
     # prepare datasets for batching
     for split in datasets:
@@ -150,11 +146,12 @@ def train_models(input_dir,
        
         datasets[split] = ds
 
-    if verbose:
-        print(f'Example batch of the "train" dataset:\n')
+    try:
         for t in datasets['train'].take(1):
             (sequences, clade_ids, sequence_lengths), models = t
 
+        if verbose:
+            print(f'Example batch of the "train" dataset:\n')
             # extract the clade ids per batch
             padding = [[1,0]]
             ind = tf.pad(tf.cumsum(sequence_lengths), padding)[:-1]
@@ -179,6 +176,15 @@ def train_models(input_dir,
             else:
                 dec = ote.OnehotTupleEncoder.decode_tfrecord_entry(S.numpy(), tuple_length = tuple_length)
             print(f'first (up to) 8 alignment columns of decoded reshaped sequence: \n{dec[:,:8]}')
+    except  tf.errors.InvalidArgumentError as e:
+            print(e, file = sys.stderr)
+            print("\nClaMSA: InvalidArgumentError during training. ", file = sys.stderr)
+            print("This can be caused by training on tfrecord input with a different list of\n",
+                  "clades (--clades) than used during conversion.\n",
+                  "Use the same list with clamsa train as used with clamsa convert!",
+                  file = sys.stderr, sep = "")
+            print ("Aborting.", file = sys.stderr)
+            sys.exit(1)
 
     # obtain the model creation functions for the wanted models
     model_creaters = {}
@@ -254,7 +260,6 @@ def train_models(input_dir,
             save_weights_path = f'{save_weights_dir}/{now_str}.h5'
 
             if verbose: 
-                print(f"\n\n")
                 print(f"Current set of hyperparameters: {creation_params}")
                 print(f"Training information will be stored in: {rundir}")
                 print(f"Weights for the best model will be stored in: {save_weights_path}")
@@ -289,7 +294,8 @@ def train_models(input_dir,
                 checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(filepath = save_weights_path, 
                                                                    monitor = 'val_loss', 
                                                                    mode = 'min', 
-                                                                   save_best_only = True, 
+                                                                   save_best_only = True,
+                                                                   save_weights_only = True,
                                                                    verbose = 1,
                 )
 
@@ -328,7 +334,7 @@ def train_models(input_dir,
 
                     if verbose:
                         print("Evaluating the 'test' dataset:")
-                    model.load_weights(save_weights_path)
+
                     test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
 
                     with tf.summary.create_file_writer(f'{rundir}/test').as_default():

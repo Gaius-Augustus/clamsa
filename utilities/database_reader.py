@@ -110,6 +110,7 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size):
     n = num_leaves[clade_id]
     N = tf.math.reduce_max(num_leaves)
 
+    
     sequence_length = context['sequence_length']
     sequence_onehot = tf.reshape(
         tf.io.decode_raw(sequence['sequence_onehot'], tf.int32),
@@ -119,11 +120,11 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size):
     # pad to `N` leaves
     paddings = tf.scatter_nd([[1,1]], (N-n)[None], shape = [3,2])
     sequence_onehot = tf.pad(sequence_onehot, paddings, constant_values=1)
-    
     sequence_onehot = tf.cast(sequence_onehot, tf.float64)
+    
     clade_id = tf.cast(clade_id, tf.int32)
     model = tf.cast(model, tf.int32)
-    
+
     # return the transformed example
     return tf.tuple([model, clade_id, sequence_length, sequence_onehot])
 
@@ -170,7 +171,7 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
     files = find_exported_tfrecord_files(folder, basename, by_splits = True)
     
     # set up an entry parse function for the datasets
-    parser = partial(parse_tfrecord_entry, num_leaves = num_leaves, alphabet_size=alphabet_size)
+    parser = partial(parse_tfrecord_entry, num_leaves = num_leaves, alphabet_size = alphabet_size)
     
     compression_type = 'GZIP' if used_compression else None
     
@@ -187,8 +188,8 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
                                         compression_type = compression_type, 
                                         buffer_size = buffer_size) \
                 .map(parser, num_parallel_calls = 2)
-                
-                # all datasets of the same model in this split are concatinated
+
+                # all datasets of the same model in this split are concatenated
                 split_ds[model] =  split_ds[model].concatenate(dataset) if split_ds[model] != None else dataset
                 
             if split.repeat_models != None and split.repeat_models[mid]:
@@ -205,7 +206,6 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
                 
             if should_shuffle:
                 split_ds = split_ds.shuffle(buffer_size = buffer_size, seed = seed)
-        
         
         datasets[split.name] = split_ds
     

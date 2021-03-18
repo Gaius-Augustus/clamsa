@@ -10,12 +10,14 @@ import newick
 from pathlib import Path
 import pandas as pd
 from collections import OrderedDict
-
-
+import warnings
 import utilities.msa_converter as mc
 
-
-
+# with tf 2.4 there are UserWarnings about converting sparse IndexedSlices to a dense
+# Tensor of unknown shape, that may consume a large amount of memory.
+# Turn such warnings off.
+warnings.filterwarnings("ignore", category=UserWarning)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
 
 def file_exists(arg):
     if not os.path.isfile(arg):
@@ -298,7 +300,7 @@ Use one of the following commands:
         # In the mode "columns" the total number of alignment columns for each basename is counted and the weights are adjusted accordingly. In mode "sequences" the total number of sequences for each basename is counted and the weights are adjusted accordingly.
         
         parser.add_argument('--tuple_length', 
-                            help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. If n = 3, you can use the flag --used_codons instead.',
+                            help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. If n = 3, you can use the flag --use_codons instead.',
                             metavar = 'TUPLE_LENGTH',
                             type = int,
                             default = 1)
@@ -315,7 +317,7 @@ Use one of the following commands:
                             action = 'store_true',
         )
 
-        parser.add_argument('--used_codons', 
+        parser.add_argument('--use_codons', 
                             help = 'The MSAs were exported as codon-aligned codon sequences instead of nucleotide alignments.',
                             action = 'store_true',
         )
@@ -397,7 +399,7 @@ Use one of the following commands:
                      args.split_specifications,
                      args.tuple_length,
                      args.use_amino_acids,
-                     args.used_codons,
+                     args.use_codons,
                      args.model_hyperparameters,
                      args.model_training_callbacks,
                      args.batch_size,
