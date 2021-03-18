@@ -116,9 +116,9 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
         tf.keras.Model: Trained model
     """
     
-    print ("Getting information for model ", trial_id, "in directory", log_dir)
+    print (f"Getting information for model {trial_id} in directory {log_dir}.")
     hps, model_name = get_model_information(trial_id, log_dir)
-    print ("The models name is", model_name)
+    print (f"Recovering model {model_name}.")
     try:
         model_module = import_module(f"models.{model_name}", package=__name__)
     except ModuleNotFoundError as err:

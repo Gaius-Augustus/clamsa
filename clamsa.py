@@ -360,16 +360,16 @@ Use one of the following commands:
         )
         
         
-        parser.add_argument('--save_model_weights', 
-                            help = 'Whether the weights of the best performing models shall be saved.',
-                            action = 'store_true',
-        )
+        #parser.add_argument('--save_model_weights', 
+        #                    help = 'Whether the weights of the best performing models shall be saved.',
+        #                    action = 'store_true',
+        #)
         
         
         parser.add_argument('--log_basedir',
                             metavar = 'LOG_BASEDIR',
                             help = 'Folder in which the Tensorboard training logs should be stored. Defaults to "./logs/"',
-                            default = './logs/',
+                            # default : same as saved_weights_dir
                             type = folder_is_writable_if_exists,
         )
 
@@ -388,9 +388,12 @@ Use one of the following commands:
         
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
-        
+
+        # default the log_dir to the saved_weights_dir
+        if args.log_basedir is None:
+            args.log_basedir = args.saved_weights_basedir
+            
         from utilities.training import train_models
-        
         
         train_models(args.input_dir, 
                      args.basenames,
@@ -405,7 +408,7 @@ Use one of the following commands:
                      args.batch_size,
                      args.batches_per_epoch,
                      args.epochs,
-                     args.save_model_weights,
+                     True, # args.save_model_weights,
                      args.log_basedir,
                      args.saved_weights_basedir,
                      args.verbose,
@@ -472,7 +475,7 @@ Use one of the following commands:
         parser.add_argument('--log_basedir',
                             metavar='LOG_BASEDIR',
                             help='Folder in which the Tensorboard training logs are stored. Defaults to "./logs/"',
-                            default = './logs/',
+#                            default = './logs/',
                             type = folder_is_writable_if_exists,
         )
         
@@ -520,6 +523,10 @@ dm3.chr1 dmel''',
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
+        # default the log_dir to the saved_weights_dir
+        if args.log_basedir is None:
+            args.log_basedir = args.saved_weights_basedir
+            
         if args.in_type == 'fasta':
 
             #import on demand (importing tf is costly)

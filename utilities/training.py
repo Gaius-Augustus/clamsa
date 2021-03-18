@@ -231,6 +231,8 @@ def train_models(input_dir,
         # log the wanted hyperparams and metrics 
         str_basenames = '_'.join(basenames)
         logdir = f'{log_basedir}/{str_basenames}/{model_name}'
+        if verbose:
+            print (f"Logging training in {logdir}")
         with tf.summary.create_file_writer(logdir).as_default():
 
             hp.hparams_config(
@@ -261,7 +263,7 @@ def train_models(input_dir,
 
             if verbose: 
                 print(f"Current set of hyperparameters: {creation_params}")
-                print(f"Training information will be stored in: {rundir}")
+                print(f"Weights are stored in: {rundir}")
                 print(f"Weights for the best model will be stored in: {save_weights_path}")
 
 
