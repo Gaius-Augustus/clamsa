@@ -78,7 +78,8 @@ def get_model_information(trial_id, log_dir):
             
             model_name = path.parts[-3]
             return get_hyperparameter(str(path)), model_name
-        
+
+    return None, None
         
         
 def get_weights_path(trial_id, saved_weights_dir):
@@ -116,9 +117,12 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
         tf.keras.Model: Trained model
     """
     
-    print (f"Getting information for model {trial_id} in directory {log_dir}.")
     hps, model_name = get_model_information(trial_id, log_dir)
-    print (f"Recovering model {model_name}.")
+    if hps is None or model_name is None:
+        print (f"Error: Could not find model {trial_id} in directory {log_dir}.", file = sys.stderr)
+        sys.exit(1)
+
+    print (f"Recovering model {model_name} with ID {trial_id} in directory {log_dir}.")
     try:
         model_module = import_module(f"models.{model_name}", package=__name__)
     except ModuleNotFoundError as err:

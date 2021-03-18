@@ -9,9 +9,9 @@ else
     echo "Skipping download and using previously downloaded test data."
 fi
 
-if [ ! -d test ]; then
+if [ ! -d test/vertebrate ]; then
     echo "Extracting ..."
     tar xzf vertebrate-test-3000.tar.gz
 else
-    echo "Skipping extraction, directory 'test' already exists."
+    echo "Skipping extraction, directory 'test/vertebrate' already exists."
 fi
