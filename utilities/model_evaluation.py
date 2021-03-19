@@ -258,7 +258,9 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     def sequence_generator():
 
         for f in fasta_paths:
-
+            if f == "":
+                path_ids_with_empty_sequences.add(f)
+                continue
             # filter fasta files that have no valid reference clade
             cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict=trans_dict, remove_stop_rows=remove_stop_rows, 
                                                         use_amino_acids = use_amino_acids, tuple_length = tuple_length, use_codons = use_codons)

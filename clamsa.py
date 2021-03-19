@@ -490,6 +490,7 @@ Use one of the following commands:
         parser.add_argument('--model_ids',
                             metavar='MODEL_IDS',
                             help='Trial-IDs of trained models residing in the LOG_BASEDIR folder with weights stored in SAVED_WEIGHTS_BASEDIR.',
+                            default='{ "clamsa" : "default" }',
                             type=is_valid_json,
                            )
         
@@ -522,6 +523,10 @@ dm3.chr1 dmel''',
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
+
+        if args.saved_weights_basedir is None:
+            args.saved_weights_basedir = os.path.join(os.path.abspath(pathname), "saved_weights")
+
 
         # default the log_dir to the saved_weights_dir
         if args.log_basedir is None:
@@ -588,13 +593,23 @@ dm3.chr1 dmel''',
         # construct a dataframe from the predictions
         df = pd.DataFrame.from_dict(preds)
 
-        if not args.out_csv is None:
-            df.to_csv(args.out_csv, sep='\t',
-                      float_format = '%.4f', # output precision
-                      index = False,
-                      header = True,
-                      mode = 'w' 
-            ) 
+
+        from io import StringIO
+        output = StringIO()
+
+        df.to_csv(output, sep='\t',
+                  float_format = '%.4f', # output precision
+                  index = False,
+                  header = True,
+                  mode = 'w' )
+        outputstr = output.getvalue()
+
+        if args.out_csv is None:
+            print(outputstr, end = "")
+        else:
+            with open(args.out_csv, mode='w') as f:
+                print(outputstr , end = "", file = f)
+
 
 def main():
     ClaMSA()

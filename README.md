@@ -21,19 +21,23 @@ git clone git clone --recurse-submodules https://github.com/Gaius-Augustus/clams
 ```
 
 # Example Classification
-
+The commands
 ```console
 cd clamsa
 
-./clamsa.py predict fasta examples/msa2.lst  \
-   --clades examples/fly.nwk  \
-   --use_codons \
-   --saved_weights_basedir saved_weights/  \
-    --model_ids '{"clamsa" :  "default"}' \
-    --out_csv /dev/stdout
+./clamsa.py predict fasta examples/msa.lst --clades examples/example_tree.nwk --use_codons
 ```
-
+output the table
+```
+path                    clamsa
+examples/msa1.fa        0.9585
+examples/msa2.fa        0.2802
+```
+Here, the two toy example alignments `msa1`, `msa2` are predicted as likely coding (0.9585) and rather non-coding (0.2802).
 
 # Utilities
   - [MSA conversion](docs/conversion.md)
 
+# Reference
+
+[End-to-end Learning of Evolutionary Models to Find Coding Regions in Genome Alignments](https://www.biorxiv.org/content/10.1101/2021.03.09.434414v1), Darvin Mertsch and Mario Stanke, *bioRxiv* 2021.03.09.434414
