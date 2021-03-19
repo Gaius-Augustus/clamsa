@@ -1,4 +1,4 @@
-# Conversion
+# Conversion (Not ready for release yet)
 Example conversion parameters for our usual flie dataset from augustus:
 ```console
 ./clamsa.py convert augustus msa/train.out --clades clades/flies.nwk --splits '{"train": 0.9, "test": 0.05, "val": 0.05}' --margin_width 10 --basename augustus_flies --use_codons --split_models 0 1
