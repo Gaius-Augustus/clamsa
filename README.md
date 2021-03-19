@@ -15,7 +15,7 @@ It builds on TensorFlow and a custom layer for Continuous-Time Markov Chains (CT
 
 Install requirements with
 ```console
-pip install tensorflow regex newick tqdm gzip pandas protobuf3-to-dict
+pip install tensorflow regex newick tqdm pandas protobuf3-to-dict
 ```
 
 # Installation
