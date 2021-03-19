@@ -17,7 +17,6 @@
    vertebrate.test.msa.lst \
    --clades ../examples/vertebrate.nwk \
    --use_codons \
-   --saved_weights_basedir ../saved_weights \
    --model_ids '{ "clamsa" : "default" }' \
    --out_csv clamsa_vert.csv
 

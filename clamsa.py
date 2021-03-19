@@ -525,6 +525,7 @@ dm3.chr1 dmel''',
         args = parser.parse_args(sys.argv[2:])
 
         if args.saved_weights_basedir is None:
+            pathname = os.path.dirname(sys.argv[0])
             args.saved_weights_basedir = os.path.join(os.path.abspath(pathname), "saved_weights")
 
 
