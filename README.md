@@ -38,7 +38,7 @@ path                    clamsa
 examples/msa1.fa        0.9585
 examples/msa2.fa        0.2802
 ```
-Here, the two toy example alignments `msa1`, `msa2` pictured above are predicted as likely coding (0.9585) and rather non-coding (0.2802).  
+Here, the two toy example alignments `msa1`, `msa2` pictured above are predicted as likely coding (0.9585) and rather non-coding (0.2802), respectively.  
 See [test/predict.sh](test/predict.sh) for more explanations and a realistical application.
 
 # Data
