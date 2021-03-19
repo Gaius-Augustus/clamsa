@@ -15,7 +15,7 @@ It builds on TensorFlow and a custom layer for Continuous-Time Markov Chains (CT
 
 Install requirements with
 ```console
-pip install tensorflow regex newick tqdm protobuf3-to-dict
+pip install tensorflow regex newick tqdm gzip pandas protobuf3-to-dict
 ```
 
 # Installation
@@ -39,6 +39,7 @@ examples/msa1.fa        0.9585
 examples/msa2.fa        0.2802
 ```
 Here, the two toy example alignments `msa1`, `msa2` pictured above are predicted as likely coding (0.9585) and rather non-coding (0.2802), respectively.  
+See the [usage of prediction](docs/usage-predict.md) for an explanation of the command line structure.  
 See [test/predict.sh](test/predict.sh) for more explanations and a realistical application.
 
 # Data

@@ -307,7 +307,7 @@ Use one of the following commands:
         
         
         parser.add_argument('--split_specifications', 
-                            help='TODO: Write help',
+                            help = 'see test/train.sh for an example',
                             metavar='SPLIT_SPECIFICATIONS',
                             type=is_valid_json,
         )
@@ -323,14 +323,14 @@ Use one of the following commands:
         )
         
         parser.add_argument('--model_hyperparameters', 
-                            help='TODO: Write help',
+                            help='see test/train.sh for an example',
                             metavar='MODEL_HYPERPARAMETERS',
                             type=is_valid_json,
         )
         
         
         parser.add_argument('--model_training_callbacks', 
-                            help='TODO: Write help',
+                            help = '', # TODO: Write help'
                             metavar='MODEL_TRAINING_CALLBACKS',
                             type=is_valid_json,
         )
