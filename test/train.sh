@@ -13,13 +13,14 @@
 
 
 # Reduce the number of epochs and batches per epoch for a quick test run
-EPOCHS=1             # 200 was used in the paper
-BATCHES_PER_EPOCH=10 # 100 was used in the paper
+EPOCHS=200            # 200 was used in the paper
+BATCHES_PER_EPOCH=100 # 100 was used in the paper
 
-SAVED_WEIGHTS_DIR=../saved_weights
 
 ../clamsa.py train ../data/train/ \
-        --basenames fly vertebrate yeast \
+	     `# basenames are the clades to be used in training` \
+             --basenames fly vertebrate yeast \
+	     `# clades specifies a list of tree files, more than one if multiple clades are trained together` \
         --clades ../examples/{fly,vertebrate,yeast}.nwk \
 	--merge_behaviour .33 .33 .33 \
         --split_specification '{
@@ -45,7 +46,7 @@ SAVED_WEIGHTS_DIR=../saved_weights
         --batch_size 20 \
         --batches_per_epoch $BATCHES_PER_EPOCH \
         --epochs $EPOCHS \
-        --saved_weights_basedir $SAVED_WEIGHTS_DIR \
+        --saved_weights_basedir ../saved_weights \
 	--verbose \
         | tee fly_vert_yeast_train.log
 
