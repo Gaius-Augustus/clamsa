@@ -43,7 +43,7 @@ Obtain
   
 ```konsole
 cd data
-./download_fly_vert_yeast_train.sh](data/download_fly_vert_yeast_train.sh
+./download_fly_vert_yeast_train.sh
 ./download_vert_test.sh
 ```
 
