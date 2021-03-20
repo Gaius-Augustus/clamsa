@@ -15,14 +15,14 @@ It builds on TensorFlow and a custom layer for Continuous-Time Markov Chains (CT
 
 Install requirements with
 ```console
-pip install tensorflow biopython regex newick tqdm pandas protobuf3-to-dict
+pip3 install tensorflow biopython regex newick tqdm pandas protobuf3-to-dict
 ```
 
 # Installation
 
 Download ClaMSA with
 ```console
-git clone git clone --recurse-submodules https://github.com/Gaius-Augustus/clamsa.git
+git clone --recurse-submodules https://github.com/Gaius-Augustus/clamsa.git
 ```
 
 # Example Classification
