@@ -8,9 +8,11 @@ It builds on TensorFlow and a custom layer for Continuous-Time Markov Chains (CT
 # Requirements
   Python modules
  - tensorflow >= 2.0
+ - biopython
  - regex
  - newick
  - tqdm
+ - pandas
  - protobuf3-to-dict
 
 Install requirements with
