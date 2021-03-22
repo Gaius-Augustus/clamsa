@@ -417,7 +417,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         #S = tf.transpose(sequences, perm = [1, 0, 2])
         sl = tf.expand_dims(sequence_lengths, axis=-1)
 
-        nontrivial_entries = tf.logical_not(tf.reduce_all(sequences == tf.ones(64, dtype=tf.float64), axis=-1))
+        nontrivial_entries = tf.logical_not(tf.reduce_all(sequences == tf.ones(sequences.shape[-1], dtype=tf.float64), axis=-1))
         nontrivial_entries = tf.cast(nontrivial_entries, dtype=tf.float64)
         nontrivial_entries_batched = bs_layer(nontrivial_entries, sl)
         nontrivial_entries_batched = tf.cast(nontrivial_entries_batched, dtype=tf.bool)
