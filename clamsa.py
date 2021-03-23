@@ -431,7 +431,7 @@ Use one of the following commands:
 
         parser.add_argument('input', 
                             metavar='INPUT',
-                            help='A space separated list of paths to text files containing themselves paths to MSA files of the chosen input type.\nEach MSA file contains a single alignment.',
+                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.',
                             type=file_exists,
                             nargs='+',
         )
