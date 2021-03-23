@@ -242,7 +242,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            tuple_length = 1,
                            batch_size = 30,
                            trans_dict = None,
-                           remove_stop_rows = False
+                           remove_stop_rows = False,
+                           num_classes = 2
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -317,7 +318,13 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     for n in models:
         model = models[n]
         try:
-            preds[n] = model.predict(dataset)[:,1]
+            pred = model.predict(dataset)
+            if num_classes > 2:
+                for c in range(num_classes):
+                    n_c = n + "_class_" + str(c)
+                    preds[n_c] = pred[:, c]
+            else:
+                preds[n] = pred[:, 1]
         except UnboundLocalError:
             pass # happens in tf 2.3 when there is no valid MSA
         del model
@@ -424,7 +431,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         aligned_sequences = tf.reduce_any(nontrivial_entries_batched, axis=1)
         aligned_sequences = tf.reduce_sum(tf.cast(aligned_sequences, dtype=tf.int64), axis=-1)
 
-        model = tf.cast(y[:,1], dtype=tf.int64)
+        model = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
         return (aligned_sequences, sequence_lengths, model)
 
 
@@ -445,9 +452,16 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         for n in models:
             model = models[n]
             try:
-                pred = model.predict(dataset)[:,1]
+                pred = model.predict(dataset)
+                if num_classes > 2:
+                    for c in range(num_classes):
+                        n_c = n + "_class_" + str(c)
+                        pred_c = pred[:, c]
+                        preds[n_c] = np.concatenate((preds[n_c], pred_c)) if n_c in preds else pred_c
+                else:
+                    pred = pred[:, 1]
+                    preds[n] = np.concatenate((preds[n], pred)) if n in preds else pred
                 num_seq[p] = pred.shape[0]
-                preds[n] = np.concatenate((preds[n], pred)) if n in preds else pred
             except UnboundLocalError:
                 pass # happens in tf 2.3 when there is no valid MSA
             del model
@@ -466,7 +480,6 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     preds['aligned_sequences'] = aligned_sequences
     preds['sequence_length'] = sequence_lengths
     preds['y'] = Y
-
 
 
     preds.move_to_end('aligned_sequences', last = False)
