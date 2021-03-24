@@ -11,13 +11,18 @@
 # are mixed in a ratio of 2/3 to 1/3 as in the paper.
 # The training data are the tfrecord files in ../data/train created with clamsa convert from fasta alignments.
 
+TRAINDATADIR=../data/train/
+if [ ! -d $TRAINDATADIR ]; then
+    echo "Training data not found in $TRAINDATADIR. Go to ../data and run download_fly_vert_yeast_train.sh"
+    exit 1
+fi
 
-# Reduce the number of epochs and batches per epoch for a quick test run
-EPOCHS=200            # 200 was used in the paper
-BATCHES_PER_EPOCH=100 # 100 was used in the paper
+# Reduce the number of epochs and batches per epoch, e.g. to 2 and 10, for a quick test run
+EPOCHS=2            # 200 was used in the paper
+BATCHES_PER_EPOCH=10 # 100 was used in the paper
 
 
-../clamsa.py train ../data/train/ \
+../clamsa.py train $TRAINDATADIR \
 	     `# basenames are the clades to be used in training` \
              --basenames fly vertebrate yeast \
 	     `# clades specifies a list of tree files, more than one if multiple clades are trained together` \

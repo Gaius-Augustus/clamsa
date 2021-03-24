@@ -90,6 +90,8 @@ def train_models(input_dir,
 
 
     # read the datasets for each wanted basename
+    input_dir = os.path.join(input_dir, '') # append '/' if not already there
+
     wanted_splits = [split for split in splits.values() if split != None ]
     unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
 

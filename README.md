@@ -5,6 +5,8 @@ It builds on TensorFlow and a custom layer for Continuous-Time Markov Chains (CT
 
 ![MSA example](examples/msa1-2.png)
 
+Above image shows two toy example input MSAs. Synonymous codons, which code for the same amino acid, have the same color.
+
 # Requirements
   Python modules
  - tensorflow >= 2.0
@@ -38,9 +40,9 @@ output the table
 ```
 path                    clamsa
 examples/msa1.fa        0.9585
-examples/msa2.fa        0.2802
+examples/msa2.fa        0.6706
 ```
-Here, the two toy example alignments `msa1`, `msa2` pictured above are predicted as likely coding (0.9585) and rather non-coding (0.2802), respectively.  
+Here, the two toy example alignments `msa1`, `msa2` pictured above are predicted to precoding with probabilities 0.9585 and 0.6706, respectively.  
 See the [usage of prediction](docs/usage-predict.md) for an explanation of the command line structure.  
 See [test/predict.sh](test/predict.sh) for more explanations and a realistical application.
 

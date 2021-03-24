@@ -166,7 +166,7 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
                     or dict with keys given by strings `model_name` and values given 
                     by tf.data.Dataset objects
     '''
-    
+
     # get all files as a nested dict. by their split names
     files = find_exported_tfrecord_files(folder, basename, by_splits = True)
     

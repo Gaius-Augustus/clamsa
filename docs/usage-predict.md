@@ -6,16 +6,19 @@ Type
 to obtain the current usage:
 
 ```
-usage: clamsa.py [-h] [--clades CLADES [CLADES ...]] [--tuple_length TUPLE_LENGTH] [--use_amino_acids] [--use_codons] [--remove_stop_rows] [--batch_size BATCH_SIZE] [--log_basedir LOG_BASEDIR] [--saved_weights_basedir SAVED_WEIGHTS_BASEDIR]
-                 [--model_ids MODEL_IDS] [--out_csv OUT_CSV] [--name_translation TRANSTBL [TRANSTBL ...]] [--num_classes NUM_CLASSES]
+usage: clamsa.py [-h] [--clades CLADES [CLADES ...]] [--tuple_length TUPLE_LENGTH] [--use_amino_acids] [--use_codons]
+                 [--remove_stop_rows] [--batch_size BATCH_SIZE] [--log_basedir LOG_BASEDIR]
+                 [--saved_weights_basedir SAVED_WEIGHTS_BASEDIR] [--model_ids MODEL_IDS] [--out_csv OUT_CSV]
+                 [--name_translation TRANSTBL [TRANSTBL ...]] [--num_classes NUM_CLASSES]
                  INPUT_TYPE INPUT [INPUT ...]
 
 Predict the class of multiple sequence alignments with one or more models.
 
 positional arguments:
   INPUT_TYPE            Specif the input file type. Supported are: {fasta, tfrecord}
-  INPUT                 A space separated list of paths to text files containing themselves paths to MSA files of the chosen input type.
+  INPUT                 If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.
                         Each MSA file contains a single alignment.
+                        If INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.
 
 optional arguments:
   -h, --help            show this help message and exit
