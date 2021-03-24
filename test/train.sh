@@ -18,8 +18,8 @@ if [ ! -d $TRAINDATADIR ]; then
 fi
 
 # Reduce the number of epochs and batches per epoch, e.g. to 2 and 10, for a quick test run
-EPOCHS=2            # 200 was used in the paper
-BATCHES_PER_EPOCH=10 # 100 was used in the paper
+EPOCHS=200            # 200 was used in the paper
+BATCHES_PER_EPOCH=100 # 100 was used in the paper
 
 
 ../clamsa.py train $TRAINDATADIR \

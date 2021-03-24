@@ -12,6 +12,12 @@
 # - A common choice may be --model_ids '{ "clamsa" : "default" }' for a single prediction each
 #   with the default parameters.
 
+TESTDATADIR=../data/test/
+if [ ! -d $TESTDATADIR ]; then
+    echo "Test data not found in $TESTDATADIR. Go to ../data and run download_vert_test.sh"
+    exit 1
+fi
+
 
 ../clamsa.py predict fasta \
    vertebrate.test.msa.lst \
