@@ -71,7 +71,7 @@ See [test/train.sh](test/train.sh) for more explanations and the command line th
 
 
 # Usages
-  - [clamsa predict](docs/usage-predict)
+  - [clamsa predict](docs/usage-predict.md)
   - [clamsa train](docs/usage-train.md)
   - [clamsa convert](docs/conversion.md) (MSA conversion)
 
