@@ -381,7 +381,7 @@ Use one of the following commands:
         
                 
         parser.add_argument('--verbose', 
-                            help = 'Whether training informtion should be printed to console. All ',
+                            help = 'Whether training information should be printed to console.',
                             action = 'store_true',
         )
         

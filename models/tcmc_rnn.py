@@ -1,13 +1,10 @@
 import sys
 sys.path.append("..")
 import tensorflow as tf
-import matplotlib.pyplot as plt
-import seaborn as sns
 from functools import partial
 
 
 from utilities import database_reader
-from utilities import visualization
 from tf_tcmc.tcmc.tcmc import TCMCProbability
 from tf_tcmc.tcmc.tensor_utils import BatchedSequences
 
