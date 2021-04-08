@@ -3,7 +3,7 @@
 ClaMSA trains most efficiently on binary files in a particular TensorFlow Records (```tfrecords```) format. For our manuscript we used the following command to convert alignments in the text format produced by [AUGUSTUS-CGP](https://github.com/Gaius-Augustus/Augustus/blob/master/docs/EXONCAND-MSAS-CGP.md) simultaneously to tfrecords format and (PhyloCSF compatible) FASTA format.
 
 ```
-../aladdin/aladdin.py convert augustus  vertebrate.f.out.gz \
+clamsa.py convert augustus  vertebrate.f.out.gz \
                 --subsample_lengths \
                 --ratio_neg_to_pos 2 \
                 --tf_out_dir . \
