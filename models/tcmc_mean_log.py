@@ -16,6 +16,7 @@ def create_model(forest,
                  alphabet_size,
                  new_alphabet_size = 0,
                  tcmc_models=8,
+                 sparse_rates = False,
                  sequence_length_as_feature=False,
                  dense1_dimension=16,
                  dense2_dimension=16,
@@ -33,7 +34,7 @@ def create_model(forest,
 
     # define the layers
     encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
-    tcmc_layer = TCMCProbability((tcmc_models,), forest, name="P_sequence_columns")
+    tcmc_layer = TCMCProbability((tcmc_models,), forest, sparse_rates = sparse_rates, name="P_sequence_columns")
     mean_log_layer = SequenceLogLikelihood(name='mean_log_P', dtype=tf.float64)
  
     sl_concat_layer = None
@@ -52,11 +53,8 @@ def create_model(forest,
     guesses_layer = tf.keras.layers.Dense(num_classes, kernel_initializer = "TruncatedNormal", activation = "softmax", name = "guesses", dtype=tf.float64)
 
     # assemble the computational graph
-    if new_alphabet_size > 0:
-        sequences2 = encoding_layer(sequences)
-    else:
-        sequences2 = sequences
-    P = tcmc_layer(sequences2, clade_ids)
+    Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
+    P = tcmc_layer(Encoded_sequences, clade_ids)
     mean_log_P = mean_log_layer([P, sequence_lengths])
     X = mean_log_P
 
