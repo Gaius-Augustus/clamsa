@@ -46,7 +46,7 @@ def create_model(forest,
     
     # assemble the computational graph
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
-    P = tcmc_layer(Encoded_sequences, clade_ids)
+    P = tcmc_layer(Encoded_sequences, clade_ids, sparse_rates = sparse_rates)
     log_P = log_layer(P) 
     batched_log_P = bs_layer(log_P, sequence_lengths)
     rnn_P = rnn_layer(batched_log_P)

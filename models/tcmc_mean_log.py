@@ -54,7 +54,7 @@ def create_model(forest,
 
     # assemble the computational graph
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
-    P = tcmc_layer(Encoded_sequences, clade_ids)
+    P = tcmc_layer(Encoded_sequences, clade_ids, sparse_rates = sparse_rates)
     mean_log_P = mean_log_layer([P, sequence_lengths])
     X = mean_log_P
 
