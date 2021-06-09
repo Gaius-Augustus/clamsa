@@ -3,14 +3,9 @@ sys.path.append("..")
 import tensorflow as tf
 from functools import partial
 
-
-
 from utilities import database_reader
-
 from tf_tcmc.tcmc.tcmc import TCMCProbability
 from tf_tcmc.tcmc.tensor_utils import segment_ids
-
-
 
 def create_model(forest, 
                  alphabet_size,
