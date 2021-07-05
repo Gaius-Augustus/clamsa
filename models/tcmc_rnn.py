@@ -3,11 +3,9 @@ sys.path.append("..")
 import tensorflow as tf
 from functools import partial
 
-
 from utilities import database_reader
 from tf_tcmc.tcmc.tcmc import TCMCProbability
 from tf_tcmc.tcmc.tensor_utils import BatchedSequences
-
 
 def create_model(forest, 
                  alphabet_size,
@@ -17,6 +15,7 @@ def create_model(forest,
                  rnn_units=32,
                  dense_dimension=16,
                  name="clamsa_tcmc_rnn",
+                 sparse_rates = False,
                  num_classes=2):
     
     num_leaves = database_reader.num_leaves(forest)
@@ -31,7 +30,7 @@ def create_model(forest,
 
     # define the layers
     encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
-    tcmc_layer = TCMCProbability((tcmc_models,), forest, name="P_sequence_columns")
+    tcmc_layer = TCMCProbability((tcmc_models,), forest, sparse_rates = sparse_rates, name="P_sequence_columns")
     log_layer = tf.keras.layers.Lambda(tf.math.log, name="log_P", dtype=tf.float64)
     bs_layer = BatchedSequences(feature_size = tcmc_models, dtype=tf.float64, name="padded_batched_log_P")    
     
@@ -52,7 +51,7 @@ def create_model(forest,
     dense = dense_layer(rnn_P)
     guesses = guesses_layer(dense)
 
-    model = tf.keras.Model(inputs = [sequences, clade_ids ,sequence_lengths], outputs = guesses, name = name)
+    model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = guesses, name = name)
     
     return model
 
