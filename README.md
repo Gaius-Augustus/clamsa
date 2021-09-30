@@ -19,7 +19,7 @@ Above image shows two toy example input MSAs. Synonymous codons, which code for 
 
 Install requirements with
 ```console
-pip3 install tensorflow biopython regex newick tqdm pandas protobuf3-to-dict matplotlib
+pip3 install tensorflow biopython regex newick tqdm pandas protobuf3-to-dict matplotlib seaborn
 ```
 
 # Installation

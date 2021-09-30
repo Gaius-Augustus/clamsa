@@ -18,6 +18,7 @@ import json
 import zipfile
 import io
 import matplotlib.pyplot as plt
+import seaborn as sns
 from . import onehot_tuple_encoder as ote
 
 stop_codons = {"taa", "tag", "tga"}
@@ -111,6 +112,9 @@ class MSA(object):
             else:
                 length = int(length / self.tuple_length) 
         return length
+
+    def alidepth(self):
+        return len(self._sequences)
 
     def delete_rows(self, which):
         assert len(which) == len(self.sequences), "Row number mismatch. Alignment {} is expected to have {} rows".format(self, len(which))
@@ -741,6 +745,38 @@ def plot_lenhist(msas, id = "unfiltered"):
     fig.savefig("lendist-oe-" + id + ".pdf", format = 'pdf')
     return [mlen, labels]
 
+def plot_depth_length_scatter(msas, id = "unfiltered", ylim=300):
+    """ plot a scatter plot of depth and lengths of classes (models) y=0, and y=1 to a pdf
+    Returns:
+        mlen  : array of alignment lengths
+        labels: array of labels (= classes / model indices)
+    """
+    num_alis = len(msas)
+    mlen = np.zeros(num_alis, dtype = np.int32)
+    mdep = np.zeros(num_alis, dtype = np.int32) # alignment depths = number of rows
+    labels = np.zeros(num_alis, dtype = np.int32)
+    colors = ["red", "green"]
+    for i, msa in enumerate(msas):
+        mlen[i] = msa.alilen()
+        mdep[i] = msa.alidepth()
+        labels[i] = msa.model
+        #vprint (f"len={mlen[i]} depth={mdep[i]} label={labels[i]}")
+
+
+    fig,ax = plt.subplots(1, 2, figsize = (16, 8))
+    for label in [0, 1]:
+        these_len = mlen[labels == label]
+        these_dep = mdep[labels == label]
+        scatter = sns.stripplot(these_dep, these_len,
+                                jitter=0.4, size=4, alpha=.5,
+                                color=colors[label], ax=ax[label])
+        scatter.set_title(f"depths and lengths of class {label} (n={len(these_len)})")
+        scatter.set_xlabel("MSA depth")
+        scatter.set_ylabel("MSA length (codons)")
+        scatter.set_ylim(1, ylim)
+    plt.savefig("deplenscatter-oe-" + id + ".pdf", format = 'pdf', bbox_inches='tight')
+    return [mdep, mlen, labels]
+
 def subsample_lengths(msas, max_sequence_length = 14999, min_sequence_length = 1, relax = 1):
     """ Subsample the [short] negatives so that
         the length distribution is very similar to that of the positives.
@@ -819,7 +855,125 @@ def subsample_lengths(msas, max_sequence_length = 14999, min_sequence_length = 1
     print ("Subsampling based on lengths has reduced the number of alignments from",
            len(msas), "to", len(filtered_msas))
     return filtered_msas
+
+def subsample_depths_lengths(msas, max_sequence_length = 14999, min_sequence_length = 1,
+                             relax = 1, pos_over_neg_mod = 1.0):
+    """ Subsample the [short and shallow] negatives and [long and deep] positives so that
+        the depth and length distributions are similar between the two classes.
+        TODO: Negative examples (model=0) of a length that is overrepresented compared to the
+        frequency of that length in positive examples (model=1) are removed at random.
+        Also, filter out 'alignments' with fewer than 2 sequences.
+    Args:
+        msas: an input list of MSAs
+        max_sequence_length: upper bound on number of codons
+        min_sequence_length: lower bound on number of codons
+        relax: >=1, factor for subsampling probability, if > 1, the 
+               subsampling deliveres more data but the negative length
+               distribution fits not as closely.
+    Returns:
+        filtered_msas: a subset of the input
+    """
+    ### compute and plot lengths and labels
+    msas_in_range = []
+    num_dropped_shallow = 0
+    max_depth = 0
+    for msa in msas:
+        if len(msa.sequences) < 2:
+            num_dropped_shallow += 1
+            continue
+        length = msa.alilen()
+        depth = msa.alidepth()
+        if depth > max_depth:
+            max_depth = depth
+        if msa.use_codons:
+            length = int(length / 3)
+        else:
+            length = int(length / msa.tuple_length)
+        if (length >= min_sequence_length and length <= max_sequence_length):
+            msas_in_range.append(msa)
+    if (num_dropped_shallow > 0):
+        print(f"{num_dropped_shallow} MSAs were dropped as they had fewer than 2 rows.")
+    mdep, mlen, labels = plot_depth_length_scatter(msas_in_range)
+    assert (len(mlen) == len(labels) and len(mdep) == len(labels) and len(mlen) == len(msas_in_range)), "length inconsistency"
     
+    ### compute probabilities for subsampling
+    max_subsample = 2001 # Don't apply subsampling for longer alignments, there typically are too few.
+    distr = np.zeros([2, max_depth+1, max_subsample], dtype = float)
+
+    for i in range(len(mlen)):
+        if (mlen[i] < max_subsample):
+            distr[labels[i], mdep[i], mlen[i]] += 1.0
+    # normalize the two joint distributions to sum up to 1
+    sums = np.sum(distr, axis=(1,2))
+    sumse = np.expand_dims(sums, axis=(1,2))
+    distr = distr / sumse
+    # overrepresentation ratio, for each length
+    epsilon = 1e-2 / len(mdep)
+    ratio = (epsilon + distr[1]) / ( epsilon + distr[0]) / pos_over_neg_mod
+
+    # as the sample has random variation, the ratios are smoothed before using them
+    ratio_smooth = np.ones_like(ratio)
+
+    def radius(slen):
+        """ The offsets to the averaging interval, equal offsets leads to systematic overestimation
+            Up to a length of 100 there is no smoothing. Beyond that, it is increasing.
+        """
+        # return [int(.04 * max(slen - 100, 0)), int(.1 * max(slen - 100, 0))]
+        return [int(0 + .15 * slen), int(0 + .2 * slen)]
+    
+    for depth in range(2, max_depth+1):
+        for slen in range(1, max_subsample):
+            r1, r2 = radius(slen)
+            a = max(slen - r1, 0)
+            b = min(slen + r2, max_subsample - 1)
+            da = max(depth-1, 2)
+            db = min(depth+1, max_depth)
+            # average over neighboring depths and nearby lengths
+            ratio_smooth[depth, slen] = np.mean(ratio[da:db, a : b + 1])
+
+    if False: # debug printing
+        for d in range(2, max_depth+1):
+            for ell in range(max_subsample):
+                print (f"d={d} ell={ell} ratio_smooth={ratio_smooth[d,ell]} ", end="")
+                for j in [0,1]:
+                    print (f"label={j} distr={distr[j,d,ell]} ", end="")
+                print()
+
+    # ratio_smooth /= np.max(ratio_smooth)
+    # ratio_smooth = np.minimum(ratio_smooth * relax, 1.0)
+
+    #fig, ax = plt.subplots(figsize = (6, 6))
+    #ax.plot(ratio_smooth, "b-")
+    #ax.set_title("length distribution subsampling probabilities")
+    #fig.savefig("subsampling-probs.pdf", format = 'pdf')
+    #print ("ratio_smooth\n", ratio_smooth)
+    
+    filtered_msas = []
+    filtered_class_nums = [0,0]
+    for i, msa in enumerate(msas_in_range):
+        keep = True
+        if mlen[i] < max_subsample: # very long MSAs are all kept
+            r = ratio_smooth[mdep[i], mlen[i]]
+            if r < 1.0 and labels[i] == 0: # is negative and negatives are overrepresented
+                keep = False
+                if random.random() < relax * r:
+                    keep = True
+
+            if r > 1.0 and labels[i] == 1: # is positive and positives are overrepresented
+                keep = False
+                if random.random() < relax / r:
+                    keep = True
+        if keep:
+            filtered_msas.append(msa)
+            filtered_class_nums[labels[i]] += 1
+    print ("Subsampling based on depths and lengths has reduced the number of alignments from",
+           len(msas), "(", sums , ") to", len(filtered_msas), " thereof ", filtered_class_nums, " [neg,pos].")
+
+    if filtered_class_nums[0] > 0 and filtered_class_nums[1] > 0:
+        plot_depth_length_scatter(filtered_msas, id = "subsampled")
+    return filtered_msas
+
+
 def subsample_labels(msas, ratio):
     """ Subsample excess examples to that the ratio of negative to positive examples is 'ratio'
     Args:
@@ -848,7 +1002,7 @@ def subsample_labels(msas, ratio):
 
     if (num_neg > num_pos * ratio): # too many negatives
         reduced_size = int(num_pos * ratio + 0.5)
-        print ("Reducing number of negatives from", num_neg, "to", reduced_size, ".")
+        print ("Reducing number of negatives from", num_neg, "to", reduced_size, ". Left number of positives at", num_pos)
         filtered_msas.extend(random.sample(neg_msas, reduced_size))
         filtered_msas.extend(pos_msas)
     else: # too many positives
@@ -1040,7 +1194,9 @@ def preprocess_export(dataset, species, splits = None, split_models = None,
     print("Split totals:", split_totals)
     # The upper bound indices used to decide where to write the `i`-th entry
     split_bins = np.cumsum(split_totals)
-    # print ("split_bins=", split_bins , "\nsplits=", splits, "\nsplit_models=", split_models)
+    if n_wanted > n_data:
+        n_wanted = int(split_bins[-1])
+    # print ("split_bins=", split_bins , "\nsplits=", splits, "\nsplit_models=", split_models, "\nn_wanted=", n_wanted)
     return splits, split_models, split_bins, n_wanted
 
 
@@ -1075,7 +1231,6 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
         n_written = np.zeros([len(splits), len(split_models)])
         
         for i in tqdm(range(n_wanted), desc="Writing TensorFlow record", unit=" MSA"):
-
             msa = dataset[i]
             iconfigurations = msa.spec_ids
             leaf_configuration = msa.coded_sequences

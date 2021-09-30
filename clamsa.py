@@ -178,6 +178,10 @@ Use one of the following commands:
                 help = 'Negative examples of overrepresented length are undersampled so that the length distributions of positives and negatives are similar. Defaults to false.',
                 action = 'store_true')
 
+        parser.add_argument('--subsample_depths_lengths',
+                help = 'Negative and positive examples a undersampled, so the joint distribution of MSA depth and length are are similar. If specified, do not specificy --subsample_lengths simultaneously. Defaults to false.',
+                action = 'store_true')
+
         parser.add_argument('--subsample_lengths_relax',
                 help = 'Factor for length subsampling probability of negatives. If > 1, the subsampling delivers more data but the negative length distribution fits not as closely that of the positives. Default=1.0', type=float, default=1.0)
 
@@ -222,10 +226,15 @@ Use one of the following commands:
         # harmonize the length distributions if requested
         if args.subsample_lengths:
             T = mc.subsample_lengths(T, min_sequence_length = args.min_sequence_length, relax=args.subsample_lengths_relax)
-        
+        if args.subsample_depths_lengths:
+            T = mc.subsample_depths_lengths(T, min_sequence_length = args.min_sequence_length, relax=args.subsample_lengths_relax,
+                                            pos_over_neg_mod=4.0) # favor less abundant positive examples
+
         # achieve the requested ratio of negatives to positives
         if args.ratio_neg_to_pos:
             T = mc.subsample_labels(T, args.ratio_neg_to_pos)
+            if args.subsample_depths_lengths:
+                mc.plot_depth_length_scatter(T, id = "sub-subsampled")
 
         print ("Number of filtered alignments available to be written: ", len(T))
         
