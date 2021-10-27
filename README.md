@@ -16,6 +16,8 @@ Above image shows two toy example input MSAs. Synonymous codons, which code for 
  - tqdm
  - pandas
  - protobuf3-to-dict
+ - matplotlib
+ - seaborn
 
 Install requirements with
 ```console
