@@ -186,7 +186,7 @@ Use one of the following commands:
                 help = 'Factor for length subsampling probability of negatives. If > 1, the subsampling delivers more data but the negative length distribution fits not as closely that of the positives. Default=1.0', type=float, default=1.0)
 
         parser.add_argument('--min_sequence_length',
-                help = 'Minum length of alignment', type=int, default=0)
+                help = 'Minum length of alignment', type=int, default=1)
 
         parser.add_argument('--verbose',
                 help = 'Whether some logging of the import and export should be performed.',
@@ -226,15 +226,19 @@ Use one of the following commands:
         # harmonize the length distributions if requested
         if args.subsample_lengths:
             T = mc.subsample_lengths(T, min_sequence_length = args.min_sequence_length, relax=args.subsample_lengths_relax)
+
         if args.subsample_depths_lengths:
-            T = mc.subsample_depths_lengths(T, min_sequence_length = args.min_sequence_length, relax=args.subsample_lengths_relax,
-                                            pos_over_neg_mod=4.0) # favor less abundant positive examples
+            T = mc.subsample_depths_lengths(T, min_sequence_length = args.min_sequence_length,
+                                            relax=args.subsample_lengths_relax,
+                                            pos_over_neg_mod=6.0) # favor less abundant positive examples
 
         # achieve the requested ratio of negatives to positives
         if args.ratio_neg_to_pos:
             T = mc.subsample_labels(T, args.ratio_neg_to_pos)
             if args.subsample_depths_lengths:
+                print ("Creating histogram")
                 mc.plot_depth_length_scatter(T, id = "sub-subsampled")
+                mc.plot_lenhist(T, id = "sub-subsampled")
 
         print ("Number of filtered alignments available to be written: ", len(T))
         
