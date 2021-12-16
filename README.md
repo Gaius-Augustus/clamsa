@@ -41,8 +41,8 @@ cd clamsa
 output the table
 ```
 path                    clamsa
-examples/msa1.fa        0.9585
-examples/msa2.fa        0.6706
+examples/msa1.fa        0.9539
+examples/msa2.fa        0.1667
 ```
 Here, the two toy example alignments `msa1`, `msa2` pictured above are predicted to precoding with probabilities 0.9585 and 0.6706, respectively.  
 See the [usage of prediction](docs/usage-predict.md) for an explanation of the command line structure.  
