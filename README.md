@@ -81,4 +81,6 @@ See [test/train.sh](test/train.sh) for more explanations and the command line th
 Most of ClaMSA was written by Darvin Mertsch.  
 
 Please cite:  
-[End-to-end Learning of Evolutionary Models to Find Coding Regions in Genome Alignments](https://www.biorxiv.org/content/10.1101/2021.03.09.434414v1), Darvin Mertsch and Mario Stanke, *bioRxiv* 2021.03.09.434414
+[End-to-end Learning of Evolutionary Models to Find Coding Regions in Genome Alignments](https://doi.org/10.1093/bioinformatics/btac028), Darvin Mertsch and Mario Stanke, *Bioinformatics*, btac028, published 21 Jan 2022  
+
+[bioRxiv preprint](https://www.biorxiv.org/content/10.1101/2021.03.09.434414v1)
