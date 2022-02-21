@@ -284,14 +284,30 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     optimizer = tf.keras.optimizers.Adam(0.0005)
 
     for n in models:
-        models[n].compile(optimizer = optimizer,
-                          loss = loss,
-                          metrics = [accuracy_metric, auroc_metric])
-        # export TCMC parameters, experimental, make this an option
-        # evo_layer = models[n].get_layer(index=2)
-        # evo_layer.export_matrices("rates-Q.txt", "rates-pi.txt")
-        # D = models[n].get_layer(index=5)
-        # print (D.get_weights())
+        model = models[n]
+        model.compile(optimizer = optimizer,
+                      loss = loss,
+                      metrics = [accuracy_metric, auroc_metric])
+        
+        """ For the very special purpose when the rate matrices are to used with an external program, output
+        the parameters upon request into flat files.
+        """
+        if model_pred_config and "get_flat_pars" in model_pred_config and model_pred_config["get_flat_pars"]:
+        # export TCMC parameters
+            print ("Exporting model parameters to text files...")
+            print (model.summary())
+            evo_layer = model.get_layer(index=2)
+            qFileName = "rates-Q.txt"
+            piFileName = "rates-pi.txt"
+            print ("Writing full rate matrices to ", qFileName, " and stationary distributions to ", piFileName)
+            evo_layer.export_matrices("rates-Q.txt", "rates-pi.txt")
+            D = models[n].get_layer(index=5)
+            Theta = D.get_weights()
+            print ("Writing logistic regression parameters of last layer:\n", Theta)
+            thetaFileName = "Theta.txt"
+            biasFileName = "biases.txt"
+            Theta[0].tofile(thetaFileName, sep='\n')
+            Theta[1].tofile(biasFileName, sep='\n')
 
     # construct a `tf.data.Dataset` from the fasta files    
     # generate a dataset for these files
