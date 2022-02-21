@@ -102,7 +102,7 @@ def get_weights_path(trial_id, saved_weights_dir):
             return str(path)
         
         
-def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
+def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir, model_pred_config = None):
     """
     Loads a trained model by its `Trial ID`
 
@@ -144,7 +144,10 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
     
     # convert the loaded hyperparameters to the correct types
     hps = {k: default_types[k](hps[k]) for k in hps}
-    
+
+    if model_pred_config: # add (overwrite) parameters to kwargs dictionary
+        hps = {**hps, **model_pred_config}
+
     # obtain the model with the correct weights
     model = create_model(forest, alphabet_size, **hps)
     weights_path = get_weights_path(trial_id, saved_weights_dir)
@@ -153,9 +156,6 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
     model.load_weights(weights_path, by_name = True, skip_mismatch = True)
     
     return model
-
-
-
 
 
 
@@ -245,7 +245,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            batch_size = 30,
                            trans_dict = None,
                            remove_stop_rows = False,
-                           num_classes = 2
+                           num_classes = 2,
+                           model_pred_config = None
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -259,7 +260,6 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     path_ids_with_empty_sequences = set()
     
     def sequence_generator():
-
         for f in fasta_paths:
             if f == "":
                 path_ids_with_empty_sequences.add(f)
@@ -276,9 +276,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
 
             yield cid, sl, S
 
-    
     # load the wanted models and compile them
-    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
+    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir, model_pred_config)) for name in trial_ids)
     accuracy_metric = 'accuracy'
     auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
     loss = tf.keras.losses.CategoricalCrossentropy()
@@ -317,16 +316,29 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     # predict on each model
     preds = collections.OrderedDict()
 
+
     for n in models:
         model = models[n]
         try:
-            pred = model.predict(dataset)
+            res = model.predict(dataset)
+            if type(res) is list:
+                pred = res[0]
+                mean_log_P = res[1]
+            else:
+                pred = res
+                mean_log_P = None
             if num_classes > 2:
                 for c in range(num_classes):
                     n_c = n + "_class_" + str(c)
                     preds[n_c] = pred[:, c]
-            else:
+            else: # for 2 classes output only the probability of being positive
                 preds[n] = pred[:, 1]
+            # log likelihoodif s if requested
+            if mean_log_P is not None:
+                M = mean_log_P.shape[1]
+                for m in range(M):
+                    ll_m = n + "ll" + str(m)
+                    preds[ll_m] = mean_log_P[:, m]
         except UnboundLocalError:
             pass # happens in tf 2.3 when there is no valid MSA
         del model
@@ -355,7 +367,8 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
                               use_codons = False,
                               tuple_length = 1,
                               batch_size = 30,
-                              num_classes = 2
+                              num_classes = 2,
+                              model_pred_config = None
 ):
 
     # calculate model properties
@@ -367,7 +380,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     
     
     # load the wanted models and compile them
-    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
+    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir, model_pred_config)) for name in trial_ids)
     accuracy_metric = 'accuracy'
     auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
     loss = tf.keras.losses.CategoricalCrossentropy()

@@ -53,7 +53,7 @@ def is_valid_json(arg):
         obj = json.loads(arg)
         return obj
     except ValueError:
-        raise argparse.ArgumentTypeError(f'The provided split "{arg}" is not a valid JSON string!')
+        raise argparse.ArgumentTypeError(f'The provided "{arg}" is not a valid JSON string!')
 
 class ClaMSA(object):
 
@@ -536,6 +536,14 @@ dm3.chr1 dmel''',
                             default=2,
         )
 
+        parser.add_argument('--model_pred_config',
+                            help='''With this JSON string specifying a dictionary, additional arguments can be given to the model creation during prediction.
+In particular, when using the tcmc_mean_log model specify '{ "get_lls" : true }' to output mean log-likelihoods of for each rate matrix in addition to the probabilities.''',
+                            metavar='PREDCFG',
+                            type=is_valid_json,
+                            default='{}', # '{ "get_lls" : false }',
+        )
+
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
@@ -587,7 +595,8 @@ dm3.chr1 dmel''',
                                               batch_size = args.batch_size,
                                               trans_dict = trans_dict,
                                               remove_stop_rows = args.remove_stop_rows,
-                                              num_classes = args.num_classes
+                                              num_classes = args.num_classes,
+                                              model_pred_config = args.model_pred_config
             )
 
         if args.in_type == 'tfrecord':
@@ -604,7 +613,8 @@ dm3.chr1 dmel''',
                                                  use_codons = args.use_codons,
                                                  tuple_length = args.tuple_length,
                                                  batch_size = args.batch_size,
-                                                 num_classes = args.num_classes
+                                                 num_classes = args.num_classes,
+                                                 model_pred_config = args.model_pred_config
             )
 
         # construct a dataframe from the predictions

@@ -16,7 +16,8 @@ def create_model(forest,
                  dense1_dimension=16,
                  dense2_dimension=16,
                  name="clamsa_mean_log",
-                 num_classes=2):
+                 num_classes=2,
+                 **kwargs):
 
     num_leaves = database_reader.num_leaves(forest)
     N = max(num_leaves)
@@ -66,8 +67,15 @@ def create_model(forest,
 
     guesses = guesses_layer(X)
 
-    model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = guesses, name = name)
+    outputs = [guesses]
 
+    """ If requested add the mean of the log likelihoods to the models output. These can be used e.g.
+        to check whether an external implementation of the pruning algorithm delives the same CTMC results.
+    """
+    if kwargs and "get_lls" in kwargs and kwargs["get_lls"]:
+        outputs.append(mean_log_P)
+
+    model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = outputs, name = name)
     return model
 
 

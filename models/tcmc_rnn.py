@@ -16,7 +16,8 @@ def create_model(forest,
                  dense_dimension=16,
                  name="clamsa_tcmc_rnn",
                  sparse_rates = False,
-                 num_classes=2):
+                 num_classes=2,
+                 **kwargs):
     
     num_leaves = database_reader.num_leaves(forest)
     N = max(num_leaves)
