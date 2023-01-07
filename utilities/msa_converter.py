@@ -539,7 +539,7 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     msa_taxon_ids = list(map(translator, spec_in_file))
   
     # compare them with the given references
-    ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i] ] for s in msa_taxon_ids]
+    ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s == species[r][i] ] for s in msa_taxon_ids]
 
     # check if these are contained in exactly one reference clade
     n_refs = [len(x) for x in ref_ids]
