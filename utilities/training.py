@@ -66,6 +66,7 @@ def train_models(input_dir,
           save_model_weights = True,
           log_basedir = 'logs',
           saved_weights_basedir = 'saved_weights',
+          dNdS = False,
           verbose = True,
          ):
     """
@@ -93,7 +94,7 @@ def train_models(input_dir,
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
 
     wanted_splits = [split for split in splits.values() if split != None ]
-    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
+    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True, dNdS = dNdS) for b in basenames}
 
     if any(['train' not in unmerged_datasets[b] for b in basenames]):
         raise Exception("A 'train' split must be specified!")
@@ -132,14 +133,16 @@ def train_models(input_dir,
     for split in datasets:
 
         ds = datasets[split]
-
+        print(ds)
         # batch and reshape sequences to match the input specification of tcmc
-        ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size)
+        ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size, dNdS)
         ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
         #ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
 
         # TODO: Pass the variable "num_classes" to database_reader.concatenate_dataset_entries().
-        if num_classes == 2:
+        if dNdS:
+            ds = ds = ds.map(database_reader.concat_sequences, num_parallel_calls = 4)
+        elif num_classes == 2:
             ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
         elif num_classes == 3:
             ds = ds.map(database_reader.concatenate_dataset_entries2, num_parallel_calls = 4)
@@ -158,11 +161,15 @@ def train_models(input_dir,
             padding = [[1,0]]
             ind = tf.pad(tf.cumsum(sequence_lengths), padding)[:-1]
             clade_ids = tf.gather(clade_ids, ind)
-
-            # extract the model ids
-            model_ids = tf.argmax(models, axis=1)
-
-            print(f'model_ids: {model_ids}')
+            
+            if dNdS:
+                print("models (labels): ", models)
+            else:
+                # extract the model ids
+                model_ids = tf.argmax(models, axis=1)
+    
+                print(f'model_ids: {model_ids}')
+                
             print(f'clade_ids: {clade_ids}')
             print(f'sequence_length: {sequence_lengths}')
             print(f'sequence_onehot.shape: {sequences.shape}')

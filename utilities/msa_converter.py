@@ -270,7 +270,7 @@ def leaf_order(path, use_alternatives=False):
         return matches
     
 def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_clades = None, margin_width = 0, tuple_length = 1, 
-                               use_amino_acids = False, use_codons = False):
+                               use_amino_acids = False, use_codons = False, dNdS = False):
     """ Imports the training files in fasta format.
     Args:
         paths (List[str]): Location of the file(s) 
@@ -317,7 +317,11 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         spec_in_file = [e.id.split('|')[0] for e in entries]
 
         # parse the model
-        model = int(entries[0].id.split('|')[-1]) 
+        if dNdS:
+            model = entries[0].id.split('|')[-1]
+            model = list(map(float, model.split(",")))
+        else:
+            model = int(entries[0].id.split('|')[-1]) 
 
         # compare them with the given references
         ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i]] for s in spec_in_file]
@@ -1202,7 +1206,8 @@ def preprocess_export(dataset, species, splits = None, split_models = None,
 
 def persist_as_tfrecord(dataset, out_dir, basename, species,
                         splits=None, split_models=None, split_bins=None, 
-                        n_wanted=None, use_compression=True, verbose=False):
+                        n_wanted=None, use_compression=True, dNdS = False, 
+                        verbose=False):
     # Importing Tensorflow takes a while. Therefore to not slow down the rest 
     # of the script it is only imported once used.
     print ("Writing to tfrecords...")
@@ -1272,30 +1277,61 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
             # be the first axis
             S = np.transpose(S, (1,0,2))
 
-            # use model (`0` or `1`), the id of the clade and length of the sequences
-            # as context features
-            msa_context = tf.train.Features(feature = {
-                'model': tf.train.Feature(int64_list = tf.train.Int64List(value = [msa.model])),
-                'clade_id': tf.train.Feature(int64_list = tf.train.Int64List(value = [clade_id])),
-                'sequence_length': tf.train.Feature(int64_list = tf.train.Int64List(value = [sequence_length])),
-                })
 
-            ## save `S` as a one element byte-sequence in feature_lists
-            sequence_feature = [tf.train.Feature(bytes_list = tf.train.BytesList(value = [S.tostring()]))]
-            msa_feature_lists = tf.train.FeatureLists(feature_list = {
-                'sequence_onehot': tf.train.FeatureList(feature = sequence_feature)
-                })
+            if dNdS:
+                print(len(model), "...", sequence_length)
+                if len(model) != sequence_length:
+                    print("The list of labels is not suited for this sequence length")
+                    continue
+                # use the id of the clade and length of the sequences as context features
+                msa_context = tf.train.Features(feature = {
+                    'clade_id': tf.train.Feature(int64_list = tf.train.Int64List(value = [clade_id])),
+                    'sequence_length': tf.train.Feature(int64_list = tf.train.Int64List(value = [sequence_length])),
+                    })
+
+                ## save model and `S` as a one element byte-sequence in feature_lists
+                model_feature = [tf.train.Feature(float_list = tf.train.FloatList(value = [single_model])) for single_model in msa.model]
+                sequence_feature = [tf.train.Feature(bytes_list = tf.train.BytesList(value = [S.tostring()]))]
+                msa_feature_lists = tf.train.FeatureLists(feature_list = {
+                    'sequence_onehot': tf.train.FeatureList(feature = sequence_feature),
+                    'model': tf.train.FeatureList(feature = model_feature)
+                    })
 
 
-            # create the SequenceExample
-            msa_sequence_example = tf.train.SequenceExample(
-                    context = msa_context,
-                    feature_lists = msa_feature_lists
-                    )
+                # create the SequenceExample
+                msa_sequence_example = tf.train.SequenceExample(
+                        context = msa_context,
+                        feature_lists = msa_feature_lists
+                        )
 
-            # write the serialized example to the TFWriter
-            msa_serialized = msa_sequence_example.SerializeToString()
-            tfwriter.write(msa_serialized)
+                # write the serialized example to the TFWriter
+                msa_serialized = msa_sequence_example.SerializeToString()
+                tfwriter.write(msa_serialized)
+            else:
+                # use model (`0` or `1`), the id of the clade and length of the sequences
+                # as context features
+                msa_context = tf.train.Features(feature = {
+                    'model': tf.train.Feature(int64_list = tf.train.Int64List(value = [msa.model])),
+                    'clade_id': tf.train.Feature(int64_list = tf.train.Int64List(value = [clade_id])),
+                    'sequence_length': tf.train.Feature(int64_list = tf.train.Int64List(value = [sequence_length])),
+                    })
+    
+                ## save `S` as a one element byte-sequence in feature_lists
+                sequence_feature = [tf.train.Feature(bytes_list = tf.train.BytesList(value = [S.tostring()]))]
+                msa_feature_lists = tf.train.FeatureLists(feature_list = {
+                    'sequence_onehot': tf.train.FeatureList(feature = sequence_feature)
+                    })
+    
+    
+                # create the SequenceExample
+                msa_sequence_example = tf.train.SequenceExample(
+                        context = msa_context,
+                        feature_lists = msa_feature_lists
+                        )
+    
+                # write the serialized example to the TFWriter
+                msa_serialized = msa_sequence_example.SerializeToString()
+                tfwriter.write(msa_serialized)
 
             #if verbose:
             #    print(f"leaf_configuration[1,...]: {leaf_configuration.shape} {leaf_configuration[1,...]}")

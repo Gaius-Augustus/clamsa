@@ -196,6 +196,10 @@ Use one of the following commands:
                 help = 'Whether the dataset should be divided into multiple chunks depending on the models of the sequences. By default no split is performed. Say one wants to split models 0 and 1 then one may achive this by "--split_models 0 1".',
                 type = int,
                 nargs = '+')
+        
+        parser.add_argument('--dNdS',
+                help = 'Wether the dataset is for training the tcmc_dNdS model (currently only supports fasta as input)',
+                action = 'store_true')
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
@@ -209,15 +213,25 @@ Use one of the following commands:
                                                        margin_width = args.margin_width,
                                                        tuple_length = args.tuple_length,
                                                        use_amino_acids = args.use_amino_acids,
-                                                       use_codons = args.use_codons)
+                                                       use_codons = args.use_codons,
+                                                       dNdS = args.dNdS)
 
         if args.in_type == 'augustus':
+            if args.dNdS:
+                print("Datasets for the dNdS model are currently only supported in fasta format")
+                return
+            
             T, species = mc.import_augustus_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
                                                           use_codons = args.use_codons)
+                                                          
 
         if args.in_type == 'phylocsf':
+            if args.dNdS:
+                print("Datasets for the dNdS model are currently only supported in fasta format")
+                return
+            
             T, species = mc.import_phylocsf_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
@@ -225,15 +239,27 @@ Use one of the following commands:
 
         # harmonize the length distributions if requested
         if args.subsample_lengths:
+            if args.dNdS:
+                print("Unsupported option: subsample_lengths - for dNdS training data")
+                return
+            
             T = mc.subsample_lengths(T, min_sequence_length = args.min_sequence_length, relax=args.subsample_lengths_relax)
 
         if args.subsample_depths_lengths:
+            if args.dNdS:
+                print("Unsupported option: subsample_depths_lengths - for dNdS training data")
+                return
+            
             T = mc.subsample_depths_lengths(T, min_sequence_length = args.min_sequence_length,
                                             relax=args.subsample_lengths_relax,
                                             pos_over_neg_mod=6.0) # favor less abundant positive examples
 
         # achieve the requested ratio of negatives to positives
         if args.ratio_neg_to_pos:
+            if args.dNdS:
+                print("Unsupported option: ratio_neg_to_pos - for dNdS training data")
+                return
+            
             T = mc.subsample_labels(T, args.ratio_neg_to_pos)
             if args.subsample_depths_lengths:
                 print ("Creating histogram")
@@ -263,6 +289,7 @@ Use one of the following commands:
                         species,
                         splits, split_models, split_bins, n_wanted,
                         use_compression = args.use_compression,
+                        dNdS = args.dNdS,
                         verbose = args.verbose)
 
                 print(f'The datasets have sucessfully been saved in tfrecord files.')
@@ -394,6 +421,9 @@ Use one of the following commands:
                             type = folder_is_writable_if_exists,
         )
         
+        parser.add_argument('--dNdS',
+                            help = 'Wether the training is for estimating dNdS (uses different datasets for training)',
+                            action = 'store_true')
                 
         parser.add_argument('--verbose', 
                             help = 'Whether training information should be printed to console.',
@@ -426,6 +456,7 @@ Use one of the following commands:
                      True, # args.save_model_weights,
                      args.log_basedir,
                      args.saved_weights_basedir,
+                     args.dNdS,
                      args.verbose,
         )
         
