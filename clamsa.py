@@ -200,6 +200,17 @@ Use one of the following commands:
         parser.add_argument('--dNdS',
                 help = 'Wether the dataset is for training the tcmc_dNdS model (currently only supports fasta as input)',
                 action = 'store_true')
+        
+        parser.add_argument('--subsample_small_omega',
+                help = 'Undersample examples with small dNdS to achieve the wanted ratio OMEGA_RATIO of omegas >= s to omega < s (default: s = 1.0)',
+                metavar = 'OMEGA_RATIO',
+                type = float)
+        
+        parser.add_argument('--subsample_separator',
+                help = 'Value s for separating small from large omegas (default: 1.0)',
+                metavar = 'SEPARATOR',
+                type = float,
+                default=1.0)
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
@@ -265,7 +276,13 @@ Use one of the following commands:
                 print ("Creating histogram")
                 mc.plot_depth_length_scatter(T, id = "sub-subsampled")
                 mc.plot_lenhist(T, id = "sub-subsampled")
-
+        
+        # achieve the requested ratio of omegas >= s to omegas < s
+        if args.subsample_small_omega:
+            T = mc.subsample_omegas(T, args.subsample_small_omega, args.subsample_separator)
+        
+        
+        
         print ("Number of filtered alignments available to be written: ", len(T))
         
         if len(T) > 0:

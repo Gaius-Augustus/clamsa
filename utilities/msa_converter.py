@@ -115,7 +115,17 @@ class MSA(object):
 
     def alidepth(self):
         return len(self._sequences)
-
+    
+    def get_omegas(self, seperator):
+        small_omegas = []
+        large_omegas = []
+        for omega in self.model:
+            if omega > seperator:
+                large_omegas.append(omega)
+            else:
+                small_omegas.append(omega)
+        return small_omegas, large_omegas
+        
     def delete_rows(self, which):
         assert len(which) == len(self.sequences), "Row number mismatch. Alignment {} is expected to have {} rows".format(self, len(which))
         for i in reversed(range(len(which))):
@@ -1020,6 +1030,32 @@ def subsample_labels(msas, ratio):
     return filtered_msas
 
 
+def subsample_omegas(msas, ratio, separator):
+    """ Subsample excess examples so that the ratio of large to small omegas is at least 'ratio'
+    Args:
+        msas: an input list of MSAs
+        ratio: fraction small/large omegas in the output
+        separator: float value to separate the small and large omegas
+    Returns:
+        filtered_msas: a subset of the input
+    """
+    print("subsampling with ratio: ", ratio)
+    filtered_msas = []
+    n_big = 0
+    n_small = 0
+    random.shuffle(msas)
+    
+    for msa in msas:
+        small, big = msa.get_omegas(separator)
+        if (n_big+len(big)) / (n_small+len(small)) >= ratio:
+            filtered_msas.append(msa)
+            n_big += len(big)
+            n_small += len(small)
+            
+    print(len(filtered_msas), "of total" ,len(msas), "MSAs sampled.\n Actual ratio: ",n_big/n_small)
+    return filtered_msas
+
+
 def export_nexus(msas, species, nex_fname, n):
     """ A sample of positive alignments are concatenated and converted to a NEXUS format that can be used directly by MrBayes to create a tree.
     Args:
@@ -1279,7 +1315,6 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
 
 
             if dNdS:
-                print(len(model), "...", sequence_length)
                 if len(model) != sequence_length:
                     print("The list of labels is not suited for this sequence length")
                     continue

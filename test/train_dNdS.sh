@@ -22,7 +22,7 @@ python ../clamsa.py train ../examples/diptera/ \
 	     `# basenames are the clades to be used in training` \
 		 --basenames diptera \
 	     `# clades specifies a list of tree files, more than one if multiple clades are trained together` \
-        --clades ../examples/DipteraTree_rooted.txt \
+        --clades ../examples/diptera.nwk \
 	--merge_behaviour .33 .33 .33 \
         --split_specification '{
               "train": {"name": "train", "wanted_models": [0], "interweave_models": true, "repeat_models": [true, true]},
@@ -31,7 +31,7 @@ python ../clamsa.py train ../examples/diptera/ \
         }' \
         --use_codons \
         --model_hyperparameters '{
-              "tcmc_dNddS" : {
+              "tcmc_dNdS" : {
                   "tcmc_models": [8],
                   "dense_dimension": [16]
               }
