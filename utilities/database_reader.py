@@ -279,7 +279,7 @@ def concatenate_dataset_entries2(models, clade_ids, sequence_lengths, sequences)
     return (X,y)
 
 # TODO: These two functions behave nearly the same. Unify them!
-def concat_sequences(models, clade_ids, sequence_lengths, sequences):
+def concatenate_dataset_entries3(models, clade_ids, sequence_lengths, sequences):
     """
     Preprocessing function to concatenate a zero-padded batch of
     variable-length sequences into a single sequence. (for dNdS)
@@ -297,6 +297,15 @@ def concat_sequences(models, clade_ids, sequence_lengths, sequences):
     y = concat_models
     
     return (X,y)
+
+def concat_sequences(clade_ids, sequence_lengths, sequences):
+    concat_sequences = tf.cast(
+        tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
+        dtype = tf.float64)
+    
+    X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
+    
+    return (X, None)
 
 
 def padded_batch(dataset, batch_size, num_leaves, alphabet_size, dNdS):

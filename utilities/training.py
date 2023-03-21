@@ -141,7 +141,7 @@ def train_models(input_dir,
 
         # TODO: Pass the variable "num_classes" to database_reader.concatenate_dataset_entries().
         if dNdS:
-            ds = ds = ds.map(database_reader.concat_sequences, num_parallel_calls = 4)
+            ds = ds = ds.map(database_reader.concatenate_dataset_entries3, num_parallel_calls = 4)
         elif num_classes == 2:
             ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
         elif num_classes == 3:
@@ -288,15 +288,21 @@ def train_models(input_dir,
                 if verbose:
                     print(f'Architecture of the model "{model_name}" with the current hyperparameters:')
                     model.summary()
-
+                    
 
                 # compile the model for training
-                loss = tf.keras.losses.CategoricalCrossentropy()
-                optimizer = tf.keras.optimizers.Adam(0.0005)
+                if dNdS:
+                    loss = tf.keras.losses.MeanSquaredError()
+                    optimizer = tf.keras.optimizers.Adam(0.0005)
+                    model.compile(optimizer = optimizer,
+                                  loss = loss,)
+                else:
+                    loss = tf.keras.losses.CategoricalCrossentropy()
+                    optimizer = tf.keras.optimizers.Adam(0.0005)
 
-                model.compile(optimizer = optimizer,
-                              loss = loss,
-                              metrics = [accuracy_metric, auroc_metric],
+                    model.compile(optimizer = optimizer,
+                                  loss = loss,
+                                  metrics = [accuracy_metric, auroc_metric],
                 )
 
 
@@ -331,7 +337,6 @@ def train_models(input_dir,
                 training_callbacks = model_training_callbacks[model_name]
                 callbacks = callbacks + training_callbacks(model, rundir, wanted_callbacks=None)
 
-
                 model.fit(datasets['train'], 
                           validation_data = datasets['val'], 
                           callbacks = callbacks,
@@ -342,15 +347,17 @@ def train_models(input_dir,
 
                 # load 'best' model weights and eval the test dataset
                 if datasets['test'] != None:
-
                     if verbose:
                         print("Evaluating the 'test' dataset:")
-
-                    test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
-
-                    with tf.summary.create_file_writer(f'{rundir}/test').as_default():
-                        tf.summary.scalar('accuracy', test_acc, step=1)
-                        tf.summary.scalar('auroc', test_auroc, step=1)
-                        tf.summary.scalar('loss', test_auroc, step=1)
+                    if dNdS:
+                        test_loss = model.evaluate(datasets['test'])
+                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                            tf.summary.scalar('loss', test_loss, step=1)
+                    else:
+                        test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
+                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                            tf.summary.scalar('accuracy', test_acc, step=1)
+                            tf.summary.scalar('auroc', test_auroc, step=1)
+                            tf.summary.scalar('loss', test_auroc, step=1)
                     
     return 0
