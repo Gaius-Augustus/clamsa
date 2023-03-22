@@ -133,7 +133,6 @@ def train_models(input_dir,
     for split in datasets:
 
         ds = datasets[split]
-        print(ds)
         # batch and reshape sequences to match the input specification of tcmc
         ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size, dNdS)
         ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
@@ -292,6 +291,7 @@ def train_models(input_dir,
 
                 # compile the model for training
                 if dNdS:
+                    # change loss function
                     loss = tf.keras.losses.MeanSquaredError()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
                     model.compile(optimizer = optimizer,

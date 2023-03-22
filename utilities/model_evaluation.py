@@ -245,7 +245,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            batch_size = 30,
                            trans_dict = None,
                            remove_stop_rows = False,
-                           num_classes = 2
+                           num_classes = 2,
+                           dNdS = False
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -316,17 +317,20 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
 
     # predict on each model
     preds = collections.OrderedDict()
-
+        
     for n in models:
         model = models[n]
         try:
             pred = model.predict(dataset)
-            if num_classes > 2:
-                for c in range(num_classes):
-                    n_c = n + "_class_" + str(c)
-                    preds[n_c] = pred[:, c]
+            if dNdS:
+                preds[n] = pred.flatten()
             else:
-                preds[n] = pred[:, 1]
+                if num_classes > 2:
+                    for c in range(num_classes):
+                        n_c = n + "_class_" + str(c)
+                        preds[n_c] = pred[:, c]
+                else:
+                    preds[n] = pred[:, 1]
         except UnboundLocalError:
             pass # happens in tf 2.3 when there is no valid MSA
         del model
@@ -340,8 +344,26 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         
     for p in path_ids_with_empty_sequences:
         print(f'The MSA "{p}" is empty (after) codon-aligning it. Ignoring it.')
-    
-    return preds
+        
+    if dNdS:
+        final_preds = {}
+        for path in preds['path']:
+            # get max sequence length in the fasta file
+            max_seq_len = 0
+            records = SeqIO.parse(path, "fasta")
+            for record in records:
+                seq_len = int(len(record.seq)/3)
+                if seq_len > max_seq_len:
+                    max_seq_len = seq_len
+            # divide the predictions into parts corresponding to the right sequence 
+            # (currently only works for 1 model)
+            for n in models:
+                final_preds[path] = preds[n][:max_seq_len]
+                preds[n] = preds[n][max_seq_len:]
+                
+        return final_preds
+    else:
+        return preds
 
 
 

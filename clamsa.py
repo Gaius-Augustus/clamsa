@@ -9,6 +9,7 @@ import numbers
 import newick
 from pathlib import Path
 import pandas as pd
+from Bio import SeqIO
 from collections import OrderedDict
 import warnings
 import utilities.msa_converter as mc
@@ -583,6 +584,11 @@ dm3.chr1 dmel''',
                             type=int,
                             default=2,
         )
+        
+        parser.add_argument('--dNdS',
+                            help='Predict dNdS values (needs a trained dNdS model). Currently only works on fasta files',
+                            action='store_true',
+        )
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
@@ -635,10 +641,14 @@ dm3.chr1 dmel''',
                                               batch_size = args.batch_size,
                                               trans_dict = trans_dict,
                                               remove_stop_rows = args.remove_stop_rows,
-                                              num_classes = args.num_classes
+                                              num_classes = args.num_classes,
+                                              dNdS = args.dNdS
             )
 
         if args.in_type == 'tfrecord':
+            if args.dNdS:
+                print("dNdS prediction currently only works on fasta files")
+                return
             
             #import on demand (importing tf is costly)
             import utilities.model_evaluation as me
@@ -654,26 +664,37 @@ dm3.chr1 dmel''',
                                                  batch_size = args.batch_size,
                                                  num_classes = args.num_classes
             )
-
-        # construct a dataframe from the predictions
-        df = pd.DataFrame.from_dict(preds)
-
-
-        from io import StringIO
-        output = StringIO()
-
-        df.to_csv(output, sep='\t',
-                  float_format = '%.4f', # output precision
-                  index = False,
-                  header = True,
-                  mode = 'w' )
-        outputstr = output.getvalue()
-
-        if args.out_csv is None:
-            print(outputstr, end = "")
+            
+        
+        if args.dNdS:
+            #write dictionary to file
+            if args.out_csv is None:
+                print(preds, end = "")
+            else:
+                with open (args.out_csv, mode = 'w') as f:
+                    for path, values in preds.items():
+                        f.write('%s:%s\n' % (path, values))
+            
         else:
-            with open(args.out_csv, mode='w') as f:
-                print(outputstr , end = "", file = f)
+            # construct a dataframe from the predictions
+            df = pd.DataFrame.from_dict(preds)
+    
+    
+            from io import StringIO
+            output = StringIO()
+    
+            df.to_csv(output, sep='\t',
+                      float_format = '%.4f', # output precision
+                      index = False,
+                      header = True,
+                      mode = 'w' )
+            outputstr = output.getvalue()
+    
+            if args.out_csv is None:
+                print(outputstr, end = "")
+            else:
+                with open(args.out_csv, mode='w') as f:
+                    print(outputstr , end = "", file = f)
 
 
 def main():
