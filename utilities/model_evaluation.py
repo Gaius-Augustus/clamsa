@@ -191,7 +191,7 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
     sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
     msa = msa_converter.MSA(
-        model = None,
+        label = None,
         chromosome_id = None, 
         start_index = None,
         end_index = None,
@@ -455,8 +455,8 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         aligned_sequences = tf.reduce_any(nontrivial_entries_batched, axis=1)
         aligned_sequences = tf.reduce_sum(tf.cast(aligned_sequences, dtype=tf.int64), axis=-1)
 
-        model = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
-        return (aligned_sequences, sequence_lengths, model)
+        label = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
+        return (aligned_sequences, sequence_lengths, label)
 
 
     # predict on each model

@@ -49,16 +49,16 @@ def find_exported_tfrecord_files(folder, basename, by_splits = False):
     
     splits = defaultdict(list)
     for f in wanted_files:
-        split, model = export_re.findall(f)[0]
-        key = (split, model)
+        split, label = export_re.findall(f)[0]
+        key = (split, label)
         splits[key].append(folder + f)
         
     if by_splits:
         split_names = set(s for (s,m) in splits.keys())
         splits_by_name = {name: {} for name in split_names}
         for s,m in splits:
-            model = int(m) if str.isdigit(m) else m           
-            splits_by_name[s][model] = splits[(s,m)]
+            label = int(m) if str.isdigit(m) else m           
+            splits_by_name[s][label] = splits[(s,m)]
             
         splits = splits_by_name
     
@@ -79,7 +79,7 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size, dNdS):
         alphabet_size (int) Number of characters in the alphabet (e.g. 4**3 = 64 for codons or 4 for nucleotide sequences)
 
     Returns:
-        (tf.tuple) Tuples of tensors `(model, clade_id, sequence_length, sequence_onehot)`
+        (tf.tuple) Tuples of tensors `(label, clade_id, sequence_length, sequence_onehot)`
     """
 
     s = alphabet_size
@@ -91,7 +91,7 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size, dNdS):
         }
         sequence_features = {
             'sequence_onehot': tf.io.FixedLenSequenceFeature([], dtype = tf.string),
-            'model': tf.io.FixedLenSequenceFeature([], dtype = tf.float32)
+            'label': tf.io.FixedLenSequenceFeature([], dtype = tf.float32)
         }
         
         # obtain one example of the given structure
@@ -102,11 +102,12 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size, dNdS):
         )
         
         # perform some transformation
-        model = sequence['model']
+        label = sequence['label']
         clade_id = context['clade_id']
     else:      
         # declare the structure of the tfrecord
         context_features = {
+            # use "model" here for backwards compability
             'model': tf.io.FixedLenFeature([], dtype = tf.int64),
             'clade_id': tf.io.FixedLenFeature([], dtype = tf.int64),
             'sequence_length': tf.io.FixedLenFeature([], dtype = tf.int64),
@@ -123,9 +124,9 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size, dNdS):
         )
         
         # perform some transformation
-        model = context['model']
+        label = context['model']
         clade_id = context['clade_id']
-        model = tf.cast(model, tf.int32)
+        label = tf.cast(label, tf.int32)
 
     # number of leaves in the specific tree
     num_leaves = tf.constant(num_leaves)
@@ -147,7 +148,7 @@ def parse_tfrecord_entry(entry, num_leaves, alphabet_size, dNdS):
     clade_id = tf.cast(clade_id, tf.int32)
 
     # return the transformed example
-    return tf.tuple([model, clade_id, sequence_length, sequence_onehot])
+    return tf.tuple([label, clade_id, sequence_length, sequence_onehot])
 
 
 
@@ -201,23 +202,23 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
         
         split_ds = {}
         
-        for mid, model in enumerate(split.wanted_models):
+        for mid, label in enumerate(split.wanted_models):
             if dNdS:
                 if mid != 0:
                     raise Exception("wanted models can only be [0] (as a placeholder) in the split specifications for dNdS estimatation")
             
-            split_ds[model] = None
-            for filename in files[split.name][model]:
+            split_ds[label] = None
+            for filename in files[split.name][label]:
                 dataset = tf.data.TFRecordDataset(filename, 
                                         compression_type = compression_type, 
                                         buffer_size = buffer_size) \
                 .map(parser, num_parallel_calls = 2)
 
-                # all datasets of the same model in this split are concatenated
-                split_ds[model] =  split_ds[model].concatenate(dataset) if split_ds[model] != None else dataset
+                # all datasets of the same label in this split are concatenated
+                split_ds[label] =  split_ds[label].concatenate(dataset) if split_ds[label] != None else dataset
                 
             if split.repeat_models != None and split.repeat_models[mid]:
-                split_ds[model] = split_ds[model].repeat()
+                split_ds[label] = split_ds[label].repeat()
         
         if split.interweave_models != None:
             if split.interweave_models == True:
@@ -243,7 +244,7 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
 #       is determined by the structure of each element in the datasets.
 #       See: https://github.com/tensorflow/tensorflow/blob/v2.4.0/tensorflow/python/data/ops/dataset_ops.py #L1667-L1812
 #       Other possible solution: Calculate the onehot models somewhere else and not in concatenate_dataset_entries() (see concat_sequences() below).
-def concatenate_dataset_entries(models, clade_ids, sequence_lengths, sequences):
+def concatenate_dataset_entries(labels, clade_ids, sequence_lengths, sequences):
     """
     Preprocessing function to concatenate a zero-padded batch of
     variable-length sequences into a single sequence.
@@ -253,15 +254,15 @@ def concatenate_dataset_entries(models, clade_ids, sequence_lengths, sequences):
         tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
         dtype = tf.float64)
     
-    models_onehot = tf.one_hot(models, depth = 2)
+    labels_onehot = tf.one_hot(labels, depth = 2)
     
     X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
-    y = models_onehot
+    y = labels_onehot
     
     return (X,y)
 
 # TODO: This is a copy of "concatenate_dataset_entries" with "depth = 3". Delete this after unification of "concatenate_dataset_entries()" and delete this function from "training.py"
-def concatenate_dataset_entries2(models, clade_ids, sequence_lengths, sequences):
+def concatenate_dataset_entries2(labels, clade_ids, sequence_lengths, sequences):
     """
     Preprocessing function to concatenate a zero-padded batch of
     variable-length sequences into a single sequence.
@@ -271,15 +272,15 @@ def concatenate_dataset_entries2(models, clade_ids, sequence_lengths, sequences)
         tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
         dtype = tf.float64)
 
-    models_onehot = tf.one_hot(models, depth = 3)
+    labels_onehot = tf.one_hot(labels, depth = 3)
 
     X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
-    y = models_onehot
+    y = labels_onehot
 
     return (X,y)
 
 # TODO: These two functions behave nearly the same. Unify them!
-def concatenate_dataset_entries3(models, clade_ids, sequence_lengths, sequences):
+def concatenate_dataset_entries3(labels, clade_ids, sequence_lengths, sequences):
     """
     Preprocessing function to concatenate a zero-padded batch of
     variable-length sequences into a single sequence. (for dNdS)
@@ -289,12 +290,12 @@ def concatenate_dataset_entries3(models, clade_ids, sequence_lengths, sequences)
         tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
         dtype = tf.float64)
     
-    concat_models = tf.cast(
-        tf.boolean_mask(models, tf.sequence_mask(sequence_lengths)),
+    concat_labels = tf.cast(
+        tf.boolean_mask(labels, tf.sequence_mask(sequence_lengths)),
         dtype = tf.float32)
     
     X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
-    y = concat_models
+    y = concat_labels
     
     return (X,y)
 

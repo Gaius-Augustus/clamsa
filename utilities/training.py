@@ -152,7 +152,7 @@ def train_models(input_dir,
 
     try:
         for t in datasets['train'].take(1):
-            (sequences, clade_ids, sequence_lengths), models = t
+            (sequences, clade_ids, sequence_lengths), labels = t
 
         if verbose:
             print(f'Example batch of the "train" dataset:\n')
@@ -162,12 +162,12 @@ def train_models(input_dir,
             clade_ids = tf.gather(clade_ids, ind)
             
             if dNdS:
-                print("models (labels): ", models)
+                print("labels: ", labels)
             else:
-                # extract the model ids
-                model_ids = tf.argmax(models, axis=1)
-    
-                print(f'model_ids: {model_ids}')
+                # extract the label ids
+                label_ids = tf.argmax(labels, axis=1)
+
+                print(f'label_ids: {label_ids}')
                 
             print(f'clade_ids: {clade_ids}')
             print(f'sequence_length: {sequence_lengths}')

@@ -24,10 +24,10 @@ from . import onehot_tuple_encoder as ote
 stop_codons = {"taa", "tag", "tga"}
 
 class MSA(object):
-    def __init__(self, model = None, chromosome_id = None, start_index = None, end_index = None,
+    def __init__(self, label = None, chromosome_id = None, start_index = None, end_index = None,
                  is_on_plus_strand = False, frame = 0, spec_ids = [], offsets = [], sequences = [], use_amino_acids = False, tuple_length = 1,
                  fname = None, use_codons = False):
-        self.model = model # label, class, e.g. y=1 for coding, y=0 for non-coding
+        self.label = label # label, class, e.g. y=1 for coding, y=0 for non-coding
         self.chromosome_id = chromosome_id
         self.start_index = start_index # chromosomal position
         self.end_index = end_index
@@ -119,7 +119,7 @@ class MSA(object):
     def get_omegas(self, seperator):
         small_omegas = []
         large_omegas = []
-        for omega in self.model:
+        for omega in self.label:
             if omega > seperator:
                 large_omegas.append(omega)
             else:
@@ -142,7 +142,7 @@ class MSA(object):
         self._updated_sequences = True
 
     def __str__(self):
-        return f"{{\n\tmodel: {self.model},\n\tchromosome_id: {self.chromosome_id},\n\tstart_index: {self.start_index},\n\tend_index: {self.end_index},\n\tis_on_plus_strand: {self.is_on_plus_strand},\n\tframe: {self.frame},\n\tspec_ids: {self.spec_ids},\n\toffsets: {self.offsets},\n\tsequences: {self.sequences},\n\tcoded_sequences: {self.coded_sequences},\n\tcodon_aligned_sequences: {self.codon_aligned_sequences}\n}}"
+        return f"{{\n\tlabell: {self.label},\n\tchromosome_id: {self.chromosome_id},\n\tstart_index: {self.start_index},\n\tend_index: {self.end_index},\n\tis_on_plus_strand: {self.is_on_plus_strand},\n\tframe: {self.frame},\n\tspec_ids: {self.spec_ids},\n\toffsets: {self.offsets},\n\tsequences: {self.sequences},\n\tcoded_sequences: {self.coded_sequences},\n\tcodon_aligned_sequences: {self.codon_aligned_sequences}\n}}"
 
 
 
@@ -299,7 +299,8 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         * >species_name_2
         * acaat---t
         *
-        * The last entry in the header determine the model of the alignment. Here: model = 1.
+        * The last entry in the header determine the label of the alignment. Here: label = 1.
+        * For dNdS training data the last entry is the list of labels for the codon columns.
 
     Returns:
         List[MSA]: Training examples read from the file(s).
@@ -326,12 +327,12 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         # parse the species names
         spec_in_file = [e.id.split('|')[0] for e in entries]
 
-        # parse the model
+        # parse the label
         if dNdS:
-            model = entries[0].id.split('|')[-1]
-            model = list(map(float, model.split(",")))
+            label = entries[0].id.split('|')[-1]
+            label = list(map(float, label.split(",")))
         else:
-            model = int(entries[0].id.split('|')[-1]) 
+            label = int(entries[0].id.split('|')[-1]) 
 
         # compare them with the given references
         ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i]] for s in spec_in_file]
@@ -355,13 +356,13 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
         # decide whether the upcoming entry should be skipped
-        skip_entry = model == 0 and random.random() > 1. / undersample_neg_by_factor
+        skip_entry = label == 0 and random.random() > 1. / undersample_neg_by_factor
         if skip_entry:
             fasta.close()
             continue
 
         msa = MSA(
-            model = model,
+            label = label,
             chromosome_id = None, 
             start_index = None,
             end_index = None,
@@ -481,7 +482,7 @@ def import_augustus_training_file(paths, undersample_neg_by_factor = 1., alphabe
 
                     try:
                         msa = MSA(
-                            model = int(oe_data[0][2]),
+                            label = int(oe_data[0][2]),
                             chromosome_id = oe_data[2], 
                             start_index = int(oe_data[3]),
                             end_index = int(oe_data[4]),
@@ -585,7 +586,7 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
     msa = MSA(
-        model = None,
+        label = None,
         chromosome_id = None, 
         start_index = None,
         end_index = None,
@@ -676,10 +677,10 @@ def import_phylocsf_training_file(paths, undersample_neg_by_factor = 1., referen
 
         for i, phylo_file in enumerate(phylo_files):
             for j, fasta in enumerate(fastas[i]):
-                model = 0 if 'control' in fasta.filename else 1
+                label = 0 if 'control' in fasta.filename else 1
                 
                 # decide whether the upcoming entry should be skipped
-                skip_entry = model==0 and random.random() > 1. / undersample_neg_by_factor
+                skip_entry = label==0 and random.random() > 1. / undersample_neg_by_factor
 
                 if skip_entry:
                     continue
@@ -717,7 +718,7 @@ def import_phylocsf_training_file(paths, undersample_neg_by_factor = 1., referen
                     sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
                     msa = MSA(
-                            model = model,
+                            label = label,
                             chromosome_id = seqname, 
                             start_index = start,
                             end_index = end,
@@ -736,7 +737,7 @@ def import_phylocsf_training_file(paths, undersample_neg_by_factor = 1., referen
 
 
 def plot_lenhist(msas, id = "unfiltered"):
-    """ plot the length distribution of classes (models) y=0, and y=1 to a pdf
+    """ plot the length distribution of classes (labels) y=0, and y=1 to a pdf
     Returns:
         mlen  : array of alignment lengths
         labels: array of labels (= classes / model indices) 
@@ -746,7 +747,7 @@ def plot_lenhist(msas, id = "unfiltered"):
     labels = np.zeros(num_alis, dtype = np.int32)
     for i, msa in enumerate(msas):
         mlen[i] = msa.alilen()
-        labels[i] = msa.model
+        labels[i] = msa.label
     
     fig, ax = plt.subplots(1, 2, figsize = (24, 8))
     colors = ["red", "green"]
@@ -760,7 +761,7 @@ def plot_lenhist(msas, id = "unfiltered"):
     return [mlen, labels]
 
 def plot_depth_length_scatter(msas, id = "unfiltered", ylim=300):
-    """ plot a scatter plot of depth and lengths of classes (models) y=0, and y=1 to a pdf
+    """ plot a scatter plot of depth and lengths of classes (labels) y=0, and y=1 to a pdf
     Returns:
         mlen  : array of alignment lengths
         labels: array of labels (= classes / model indices)
@@ -773,7 +774,7 @@ def plot_depth_length_scatter(msas, id = "unfiltered", ylim=300):
     for i, msa in enumerate(msas):
         mlen[i] = msa.alilen()
         mdep[i] = msa.alidepth()
-        labels[i] = msa.model
+        labels[i] = msa.label
         #vprint (f"len={mlen[i]} depth={mdep[i]} label={labels[i]}")
 
 
@@ -794,8 +795,8 @@ def plot_depth_length_scatter(msas, id = "unfiltered", ylim=300):
 def subsample_lengths(msas, max_sequence_length = 14999, min_sequence_length = 1, relax = 1):
     """ Subsample the [short] negatives so that
         the length distribution is very similar to that of the positives.
-        Negative examples (model=0) of a length that is overrepresented compared to the
-        frequency of that length in positive examples (model=1) are removed at random.
+        Negative examples (label=0) of a length that is overrepresented compared to the
+        frequency of that length in positive examples (label=1) are removed at random.
         Also, filter out 'alignments' with fewer than 2 sequences.
     Args:
         msas: an input list of MSAs
@@ -862,7 +863,7 @@ def subsample_lengths(msas, max_sequence_length = 14999, min_sequence_length = 1
     filtered_msas = []
     for i, msa in enumerate(msas_in_range):
         slen = msa.alilen()
-        if msa.model != 0 or slen >= max_subsample or random.random() < ratio_smooth[slen]:
+        if msa.label != 0 or slen >= max_subsample or random.random() < ratio_smooth[slen]:
              filtered_msas.append(msa)
 
     plot_lenhist(filtered_msas, id = "subsampled")
@@ -874,8 +875,8 @@ def subsample_depths_lengths(msas, max_sequence_length = 14999, min_sequence_len
                              relax = 1, pos_over_neg_mod = 1.0):
     """ Subsample the [short and shallow] negatives and [long and deep] positives so that
         the depth and length distributions are similar between the two classes.
-        TODO: Negative examples (model=0) of a length that is overrepresented compared to the
-        frequency of that length in positive examples (model=1) are removed at random.
+        TODO: Negative examples (label=0) of a length that is overrepresented compared to the
+        frequency of that length in positive examples (label=1) are removed at random.
         Also, filter out 'alignments' with fewer than 2 sequences.
     Args:
         msas: an input list of MSAs
@@ -1007,10 +1008,10 @@ def subsample_labels(msas, ratio):
     neg_msas = []
     filtered_msas = []
     for msa in msas:
-        if msa.model == 0:
+        if msa.label == 0:
             num_neg += 1
             neg_msas.append(msa)
-        elif msa.model == 1:
+        elif msa.label == 1:
             num_pos += 1
             pos_msas.append(msa)
 
@@ -1066,7 +1067,7 @@ def export_nexus(msas, species, nex_fname, n):
     positiveMSAs = []
     num_in_frame_stops = num_positives = 0
     for msa in msas:
-        if (msa.model == 1):
+        if (msa.label == 1):
             num_positives += 1
             msa.codon_aligned_sequences
             if msa.in_frame_stops: # in at least one row
@@ -1170,10 +1171,10 @@ def write_msa(msa, species, tfwriter, use_codons=True, verbose=False):
     
 
 
-    # use model (`0` or `1`), the id of the clade and length of the sequences
+    # use label (`0` or `1`), the id of the clade and length of the sequences
     # as context features
     msa_context = tf.train.Features(feature = {
-        'model': tf.train.Feature(int64_list = tf.train.Int64List(value = [msa.model])),
+        'label': tf.train.Feature(int64_list = tf.train.Int64List(value = [msa.label])),
         'clade_id': tf.train.Feature(int64_list = tf.train.Int64List(value = [clade_id])),
         'sequence_length': tf.train.Feature(int64_list = tf.train.Int64List(value = [sequence_length])),
     })
@@ -1252,13 +1253,13 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
     options = tf.io.TFRecordOptions(compression_type = 'GZIP') if use_compression else None
 
 
-    # Generate target file name based on chosen split and model
+    # Generate target file name based on chosen split and label
     
-    target_path = lambda split_name, model: \
+    target_path = lambda split_name, label: \
         os.path.join(out_dir, # this appends a slash if the user did not
                      basename
                      + ('-' + split_name if split_name != None else '')
-                     + ('-m' + str(model) if model != None else '')
+                     + ('-m' + str(label) if label != None else '')
                      + '.tfrecord'
                      + ('.gz' if use_compression else ''))
     
@@ -1275,11 +1276,11 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
             msa = dataset[i]
             iconfigurations = msa.spec_ids
             leaf_configuration = msa.coded_sequences
-            model = msa.model
+            label = msa.label
 
             # retrieve the wanted tfwriter for this MSA
             s = np.digitize(i, split_bins)
-            m = split_models.index(model) if model in split_models else 0 
+            m = split_models.index(label) if label in split_models else 0 
             tfwriter = tfwriters[s][m]
             n_written[s][m] += 1
 
@@ -1315,7 +1316,7 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
 
 
             if dNdS:
-                if len(model) != sequence_length:
+                if len(label) != sequence_length:
                     print("The list of labels is not suited for this sequence length")
                     continue
                 # use the id of the clade and length of the sequences as context features
@@ -1324,12 +1325,12 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
                     'sequence_length': tf.train.Feature(int64_list = tf.train.Int64List(value = [sequence_length])),
                     })
 
-                ## save model and `S` as a one element byte-sequence in feature_lists
-                model_feature = [tf.train.Feature(float_list = tf.train.FloatList(value = [single_model])) for single_model in msa.model]
+                ## save `S` as a one element byte-sequence and label in feature_lists
+                label_feature = [tf.train.Feature(float_list = tf.train.FloatList(value = [single_value])) for single_value in msa.label]
                 sequence_feature = [tf.train.Feature(bytes_list = tf.train.BytesList(value = [S.tostring()]))]
                 msa_feature_lists = tf.train.FeatureLists(feature_list = {
                     'sequence_onehot': tf.train.FeatureList(feature = sequence_feature),
-                    'model': tf.train.FeatureList(feature = model_feature)
+                    'label': tf.train.FeatureList(feature = label_feature)
                     })
 
 
@@ -1343,10 +1344,11 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
                 msa_serialized = msa_sequence_example.SerializeToString()
                 tfwriter.write(msa_serialized)
             else:
-                # use model (`0` or `1`), the id of the clade and length of the sequences
+                # use label (`0` or `1`), the id of the clade and length of the sequences
                 # as context features
                 msa_context = tf.train.Features(feature = {
-                    'model': tf.train.Feature(int64_list = tf.train.Int64List(value = [msa.model])),
+                    # use "model" here for backwards compability
+                    'model': tf.train.Feature(int64_list = tf.train.Int64List(value = [msa.label])),
                     'clade_id': tf.train.Feature(int64_list = tf.train.Int64List(value = [clade_id])),
                     'sequence_length': tf.train.Feature(int64_list = tf.train.Int64List(value = [sequence_length])),
                     })
@@ -1424,7 +1426,7 @@ def write_phylocsf(dataset, out_dir, basename, species,
         phyloCSFspecies = species[clade_id] # correct?  
     
         frame = msa.frame
-        y = msa.model
+        y = msa.label
         assert y == 0 or y == 1, "PhyloCSF output expects binary class"
         
         class_dir = os.path.join(split_dir, classnames[y])
