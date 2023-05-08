@@ -287,12 +287,13 @@ def train_models(input_dir,
                 if verbose:
                     print(f'Architecture of the model "{model_name}" with the current hyperparameters:')
                     model.summary()
+                    #tf.keras.utils.plot_model(model, show_shapes=True)
                     
 
                 # compile the model for training
                 if dNdS:
                     # change loss function
-                    loss = tf.keras.losses.MeanSquaredError()
+                    loss = tf.keras.losses.MeanSquaredLogarithmicError()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
                     model.compile(optimizer = optimizer,
                                   loss = loss,)

@@ -18,8 +18,6 @@ def create_model(forest,
                  alphabet_size,
                  new_alphabet_size = 0,
                  tcmc_models=8,
-                 rnn_type='lstm',
-                 rnn_units=32,
                  dense_dimension=16,
                  name="clamsa_tcmc_dNdS",
                  sparse_rates = False):
@@ -38,27 +36,23 @@ def create_model(forest,
     encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
     tcmc_layer = TCMCProbability((tcmc_models,), forest, sparse_rates = sparse_rates, name="P_sequence_columns")
     log_layer = tf.keras.layers.Lambda(tf.math.log, name="log_P", dtype=tf.float64)
-    #bs_layer = BatchedSequences(feature_size = tcmc_models, dtype=tf.float64, name="padded_batched_log_P")    
-    
-    #rnn_layer = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(rnn_units), name="lstm", dtype=tf.float64)
-    #if rnn_type == "gru":
-    #    rnn_layer = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(rnn_units), name=rnn_type, dtype=tf.float64)
+    #norm_layer = tf.keras.layers.Lambda()
     
     # maybe change kernel initialization and activation functions
-    dense_layer1 = tf.keras.layers.Dense(dense_dimension, activation = "relu", name="dense1")
-    dense_layer2 = tf.keras.layers.Dense(dense_dimension, activation = "relu", name="dense2")
-    guess_layer = tf.keras.layers.Dense(1, name = "guesses", dtype=tf.float64)
-    
+    dense_layer1 = tf.keras.layers.Dense(dense_dimension, kernel_initializer = "TruncatedNormal", activation = "relu", name="dense1")
+    #dense_layer2 = tf.keras.layers.Dense(dense_dimension, activation = "sigmoid", name="dense2")
+    guess_layer = tf.keras.layers.Dense(1, name = "z", dtype=tf.float64)
+    exp_layer = tf.keras.layers.Lambda(tf.math.exp, name="exp_z", dtype=tf.float64)
     
     # assemble the computational graph
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
     P = tcmc_layer(Encoded_sequences, clade_ids)
     log_P = log_layer(P) 
-    #batched_log_P = bs_layer(log_P, sequence_lengths)
-    #rnn_P = rnn_layer(batched_log_P)
-    dense1 = dense_layer1(log_P)
-    dense2 = dense_layer2(dense1)
-    omega = guess_layer(dense2)
+    #dense1 = dense_layer1(log_P)
+    #dense2 = dense_layer2(dense1)
+    z = guess_layer(log_P)
+    omega = exp_layer(z)
+    
 
     model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = omega, name = name)
     
@@ -82,6 +76,14 @@ def training_callbacks(model, logdir, wanted_callbacks):
     aa_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=log_aa)
     
     return [aa_callback]
+
+
+def normalize_by_depth():
+    return
+
+
+
+
 
 class Encode(tf.keras.layers.Layer):
     """Encoding the alphabet"""
