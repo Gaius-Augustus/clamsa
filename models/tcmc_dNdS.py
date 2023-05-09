@@ -12,7 +12,6 @@ from functools import partial
 
 from utilities import database_reader
 from tf_tcmc.tcmc.tcmc import TCMCProbability
-from tf_tcmc.tcmc.tensor_utils import BatchedSequences
 
 def create_model(forest, 
                  alphabet_size,
@@ -36,30 +35,26 @@ def create_model(forest,
     encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
     tcmc_layer = TCMCProbability((tcmc_models,), forest, sparse_rates = sparse_rates, name="P_sequence_columns")
     log_layer = tf.keras.layers.Lambda(tf.math.log, name="log_P", dtype=tf.float64)
-    #norm_layer = tf.keras.layers.Lambda()
+    norm_layer = normalize_by_depth(name = "normalize", dtype=tf.float64)
     
     # maybe change kernel initialization and activation functions
-    dense_layer1 = tf.keras.layers.Dense(dense_dimension, kernel_initializer = "TruncatedNormal", activation = "relu", name="dense1")
-    #dense_layer2 = tf.keras.layers.Dense(dense_dimension, activation = "sigmoid", name="dense2")
-    guess_layer = tf.keras.layers.Dense(1, name = "z", dtype=tf.float64)
+    #dense_layer1 = tf.keras.layers.Dense(dense_dimension, kernel_initializer = "TruncatedNormal", activation = "relu", name="dense1")
+    reg_layer = tf.keras.layers.Dense(1, name = "z", dtype=tf.float64)
     exp_layer = tf.keras.layers.Lambda(tf.math.exp, name="exp_z", dtype=tf.float64)
     
     # assemble the computational graph
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
     P = tcmc_layer(Encoded_sequences, clade_ids)
-    log_P = log_layer(P) 
+    log_P = log_layer(P)
+    norm_log_P = norm_layer(sequences, log_P)
     #dense1 = dense_layer1(log_P)
-    #dense2 = dense_layer2(dense1)
-    z = guess_layer(log_P)
+    z = reg_layer(norm_log_P)
     omega = exp_layer(z)
     
 
     model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = omega, name = name)
     
     return model
-
-
-
 
 
 
@@ -76,12 +71,6 @@ def training_callbacks(model, logdir, wanted_callbacks):
     aa_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=log_aa)
     
     return [aa_callback]
-
-
-def normalize_by_depth():
-    return
-
-
 
 
 
@@ -102,6 +91,56 @@ class Encode(tf.keras.layers.Layer):
 
     def get_config(self):
         base_config = super(Encode, self).get_config()
+        return base_config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+    
+    
+
+def get_depths(sequences):
+    
+    #check which arrays in the third dimension contain all ones (corresponds to taxon missing in the alignment)
+    all_ones_mask = tf.reduce_all(tf.equal(sequences, 1), axis=2)
+    
+    #delete missing rows 
+    seq_trim = tf.ragged.boolean_mask(sequences, tf.logical_not(all_ones_mask))
+    
+    #count how many actual taxons are present in one alignment column
+    depths = seq_trim.row_lengths(axis=1)
+    
+    return depths
+
+
+class normalize_by_depth(tf.keras.layers.Layer):
+    """Divide the output from the TCMC layer with the alignment depth (column-wise)"""
+    
+    def __init__(self, **kwargs):
+        super(normalize_by_depth, self).__init__(**kwargs)
+               
+        
+    def build(self, input_shape):
+        super(normalize_by_depth, self).build(input_shape)
+        
+    
+    @tf.function(input_signature=(
+    tf.TensorSpec(shape=[None,None,None], dtype=tf.float64, name='alignment'),
+    tf.TensorSpec(shape=[None,None], dtype=tf.float64, name='log_P_values'),
+    ))
+    def call(self, sequences, log_P_values):
+        
+        
+        with tf.name_scope("get_depths"):
+            depths = get_depths(sequences)
+            
+        norm_log_P_values = tf.transpose(tf.transpose(log_P_values) / tf.cast(depths, tf.float64))
+            
+        return norm_log_P_values
+    
+    
+    def get_config(self):
+        base_config = super(normalize_by_depth, self).get_config()
         return base_config
 
     @classmethod
