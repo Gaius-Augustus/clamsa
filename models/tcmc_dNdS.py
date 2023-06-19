@@ -38,8 +38,8 @@ def create_model(forest,
     norm_layer = normalize_by_depth(name = "normalize", dtype=tf.float64)
     
     # maybe change kernel initialization and activation functions
-    #dense_layer1 = tf.keras.layers.Dense(dense_dimension, kernel_initializer = "TruncatedNormal", activation = "relu", name="dense1")
-    reg_layer = tf.keras.layers.Dense(1, name = "z", dtype=tf.float64)
+    dense_layer1 = tf.keras.layers.Dense(dense_dimension, kernel_initializer = "TruncatedNormal", activation = "relu", name="dense1")
+    reg_layer = tf.keras.layers.Dense(1, name = "z", kernel_initializer = "TruncatedNormal", dtype=tf.float64)
     exp_layer = tf.keras.layers.Lambda(tf.math.exp, name="exp_z", dtype=tf.float64)
     
     # assemble the computational graph
@@ -47,8 +47,8 @@ def create_model(forest,
     P = tcmc_layer(Encoded_sequences, clade_ids)
     log_P = log_layer(P)
     norm_log_P = norm_layer(sequences, log_P)
-    #dense1 = dense_layer1(log_P)
-    z = reg_layer(norm_log_P)
+    dense1 = dense_layer1(norm_log_P)
+    z = reg_layer(dense1)
     omega = exp_layer(z)
     
 

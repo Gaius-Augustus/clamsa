@@ -9,6 +9,7 @@ import tensorflow as tf
 import datetime
 import itertools
 from pathlib import Path
+from matplotlib import pyplot as plt
 
 from tf_tcmc.tcmc.tcmc import TCMCProbability
 from tf_tcmc.tcmc.tensor_utils import segment_ids
@@ -293,10 +294,73 @@ def train_models(input_dir,
                 # compile the model for training
                 if dNdS:
                     # change loss function
-                    loss = tf.keras.losses.MeanSquaredLogarithmicError()
+                    class MeanSquaredLogarithmicError(tf.keras.losses.Loss):
+                        
+                        def call(self, y_true, y_pred):
+                            return tf.reduce_mean(tf.math.square(tf.math.log(y_pred) - tf.math.log(y_true)), axis=-1)
+                        
+                    
+                    class SelectionAccuracy(tf.keras.metrics.Metric):
+                        """
+                           classifies selection into 3 classes
+                           and returns accuracy for a single class c.
+                        """
+                        def __init__(self, name="sel_accuracy", c = 0, **kwargs):
+                            super(SelectionAccuracy, self).__init__(name=name+str(c), **kwargs)
+                            self.s_accuracy = self.add_weight(name = "sa", initializer="zeros")
+                            self.c = c
+                        
+                        def update_state(self, y_true, y_pred, sample_weight=None):
+                            
+                            # write 2 for positive selection(omega>=1.2)
+                            true_pos = tf.where(tf.math.greater_equal(y_true, 1.2), tf.constant(2.0, dtype=tf.float64), y_true)
+                            pred_pos = tf.where(tf.math.greater_equal(y_pred, 1.2), tf.constant(2.0, dtype=tf.float64), y_pred)
+                            
+                            #write 0 for negative(omega <= 0.8)
+                            true_pos_neg = tf.where(tf.math.less_equal(true_pos, 0.8), tf.constant(0.0, dtype=tf.float64), true_pos)
+                            pred_pos_neg = tf.where(tf.math.less_equal(pred_pos, 0.8), tf.constant(0.0, dtype=tf.float64), pred_pos)
+                            
+                            #write 1 for neutral(1.2 >= omega >= 0.8)
+                            neutral_sel_mask_true = tf.math.logical_and(
+                                                    tf.math.not_equal(tf.constant(2.0, dtype=tf.float64), true_pos_neg),
+                                                    tf.math.not_equal(tf.constant(0.0, dtype=tf.float64), true_pos_neg))
+                            
+                            neutral_sel_mask_pred = tf.math.logical_and(
+                                                    tf.math.not_equal(tf.constant(2.0, dtype=tf.float64), pred_pos_neg),
+                                                    tf.math.not_equal(tf.constant(0.0, dtype=tf.float64), pred_pos_neg))
+                            
+                            true_all = tf.where(neutral_sel_mask_true, tf.constant(1.0, dtype=tf.float64), true_pos_neg)
+                            pred_all = tf.where(neutral_sel_mask_pred, tf.constant(1.0, dtype=tf.float64), pred_pos_neg)
+                            
+                            
+                            
+                            cf_mat = tf.math.confusion_matrix(tf.squeeze(true_all), tf.squeeze(pred_all), num_classes=3)
+                            
+                            #number of correct predictions for each class
+                            diag = tf.linalg.tensor_diag_part(cf_mat)
+                            
+                            #row sums (total number of predictions for each class)
+                            total_per_class = tf.reduce_sum(cf_mat, axis=1)
+                            
+                            #compute accuracy
+                            s_acc = (diag / tf.maximum(1, total_per_class))
+                            
+                            #only return accuracy for class c (metric results can't be arrays?)
+                            self.s_accuracy.assign(tf.cast(tf.gather(s_acc, self.c), dtype = tf.float32))
+                            
+                        def reset_state(self):
+                            self.s_accuracy.assign(0)
+                            
+                        def result(self):
+                            return self.s_accuracy
+                            
+                        
+                        
+                    loss = MeanSquaredLogarithmicError()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
                     model.compile(optimizer = optimizer,
-                                  loss = loss,)
+                                  loss = loss,
+                                  metrics = [SelectionAccuracy(c=0),SelectionAccuracy(c=1),SelectionAccuracy(c=2)])
                 else:
                     loss = tf.keras.losses.CategoricalCrossentropy()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
@@ -305,9 +369,8 @@ def train_models(input_dir,
                                   loss = loss,
                                   metrics = [accuracy_metric, auroc_metric],
                 )
-
-
-
+                        
+                
                 # define callbacks during training
                 checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(filepath = save_weights_path, 
                                                                    monitor = 'val_loss', 
@@ -326,34 +389,42 @@ def train_models(input_dir,
                 )
 
 
-                tensorboard_cb = tf.keras.callbacks.TensorBoard(rundir)
+                tensorboard_cb = tf.keras.callbacks.TensorBoard(rundir, histogram_freq=0, write_graph=True, write_images=True)
 
-
+                #plot_cb = PlotLearning()
 
                 callbacks = [tensorboard_cb,]
 
                 if datasets['val'] != None:
-                    callbacks = callbacks + [checkpoint_cb, learnrate_cb]
+                    callbacks = callbacks + [checkpoint_cb, learnrate_cb, ]
                     
                 training_callbacks = model_training_callbacks[model_name]
                 callbacks = callbacks + training_callbacks(model, rundir, wanted_callbacks=None)
 
-                model.fit(datasets['train'], 
+                history = model.fit(datasets['train'], 
                           validation_data = datasets['val'], 
                           callbacks = callbacks,
                           epochs = epochs, 
                           steps_per_epoch = batches_per_epoch, 
                           verbose = verbose,
                 )
+                
+                plt.plot(history.history['loss'])
+                plt.plot(history.history['val_loss'])
+                plt.savefig("plot.png")
+                #plt.show()
 
                 # load 'best' model weights and eval the test dataset
                 if datasets['test'] != None:
                     if verbose:
                         print("Evaluating the 'test' dataset:")
                     if dNdS:
-                        test_loss = model.evaluate(datasets['test'])
+                        test_loss, test_acc0, test_acc1, test_acc2 = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
                             tf.summary.scalar('loss', test_loss, step=1)
+                            tf.summary.scalar('accuracy_0', test_acc0, step=1)
+                            tf.summary.scalar('accuracy_1', test_acc1, step=1)
+                            tf.summary.scalar('accuracy_2', test_acc2, step=1)
                     else:
                         test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
