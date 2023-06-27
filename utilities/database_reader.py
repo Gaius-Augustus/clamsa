@@ -298,6 +298,29 @@ def concatenate_dataset_entries3(labels, clade_ids, sequence_lengths, sequences)
     y = concat_labels
     
     return (X,y)
+    
+def concatenate_dataset_entries4(labels, clade_ids, sequence_lengths, sequences):
+    """
+    Preprocessing function to concatenate a zero-padded batch of
+    variable-length sequences into a single sequence. (for dNdS, with sample weights)
+    """
+    
+    concat_sequences = tf.cast(
+        tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
+        dtype = tf.float64)
+    
+    concat_labels = tf.cast(
+        tf.boolean_mask(labels, tf.sequence_mask(sequence_lengths)),
+        dtype = tf.float32)
+    
+    X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
+    y = concat_labels
+    
+    sample_weights = tf.where(tf.math.less_equal(concat_labels, 0.8), tf.constant(0.05), tf.constant(1.0))
+    sample_weights = tf.where(tf.math.greater_equal(concat_labels, 1.2), tf.constant(3.5), sample_weights)
+    
+    return (X,y, sample_weights)
+
 
 def concat_sequences(clade_ids, sequence_lengths, sequences):
     concat_sequences = tf.cast(

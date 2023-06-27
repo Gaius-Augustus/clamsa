@@ -442,6 +442,10 @@ Use one of the following commands:
         parser.add_argument('--dNdS',
                             help = 'Wether the training is for estimating dNdS (uses different datasets for training)',
                             action = 'store_true')
+        
+        parser.add_argument('--sample_weights',
+                            help = 'Wether sample weights should be used for training (currently creates weights 0.05, 1.0, 3.5 for dNdS values omega <= 0.8, 0.8 < omega < 1.2, 1.2 <= omega) ',
+                            action = 'store_true')
                 
         parser.add_argument('--verbose', 
                             help = 'Whether training information should be printed to console.',
@@ -475,6 +479,7 @@ Use one of the following commands:
                      args.log_basedir,
                      args.saved_weights_basedir,
                      args.dNdS,
+                     args.sample_weights,
                      args.verbose,
         )
         

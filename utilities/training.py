@@ -68,6 +68,7 @@ def train_models(input_dir,
           log_basedir = 'logs',
           saved_weights_basedir = 'saved_weights',
           dNdS = False,
+          sample_weights = False,
           verbose = True,
          ):
     """
@@ -141,7 +142,11 @@ def train_models(input_dir,
 
         # TODO: Pass the variable "num_classes" to database_reader.concatenate_dataset_entries().
         if dNdS:
-            ds = ds = ds.map(database_reader.concatenate_dataset_entries3, num_parallel_calls = 4)
+            if sample_weights:
+                ds = ds.map(database_reader.concatenate_dataset_entries4, num_parallel_calls = 4)
+            else:
+                ds = ds.map(database_reader.concatenate_dataset_entries3, num_parallel_calls = 4)
+            
         elif num_classes == 2:
             ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
         elif num_classes == 3:
@@ -153,7 +158,10 @@ def train_models(input_dir,
 
     try:
         for t in datasets['train'].take(1):
-            (sequences, clade_ids, sequence_lengths), labels = t
+            if sample_weights:
+                (sequences, clade_ids, sequence_lengths), labels, s_weights = t
+            else:
+                (sequences, clade_ids, sequence_lengths), labels = t
 
         if verbose:
             print(f'Example batch of the "train" dataset:\n')
@@ -164,6 +172,8 @@ def train_models(input_dir,
             
             if dNdS:
                 print("labels: ", labels)
+                if sample_weights:
+                    print("sample weights: ", s_weights)
             else:
                 # extract the label ids
                 label_ids = tf.argmax(labels, axis=1)
@@ -307,7 +317,8 @@ def train_models(input_dir,
                         """
                         def __init__(self, name="sel_accuracy", c = 0, **kwargs):
                             super(SelectionAccuracy, self).__init__(name=name+str(c), **kwargs)
-                            self.s_accuracy = self.add_weight(name = "sa", initializer="zeros")
+                            self.s_correct = self.add_weight(name = "sc", initializer="zeros")
+                            self.s_total = self.add_weight(name = "st", initializer="zeros")
                             self.c = c
                         
                         def update_state(self, y_true, y_pred, sample_weight=None):
@@ -339,20 +350,21 @@ def train_models(input_dir,
                             #number of correct predictions for each class
                             diag = tf.linalg.tensor_diag_part(cf_mat)
                             
-                            #row sums (total number of predictions for each class)
+                            #total number of examples for each class
                             total_per_class = tf.reduce_sum(cf_mat, axis=1)
                             
-                            #compute accuracy
-                            s_acc = (diag / tf.maximum(1, total_per_class))
                             
-                            #only return accuracy for class c (metric results can't be arrays?)
-                            self.s_accuracy.assign(tf.cast(tf.gather(s_acc, self.c), dtype = tf.float32))
+                            #only assign values for class c (metric results can't be arrays?)
+                            self.s_correct.assign_add(tf.cast(tf.gather(diag, self.c), dtype = tf.float32))
+                            self.s_total.assign_add(tf.cast(tf.gather(total_per_class, self.c), dtype = tf.float32))
                             
                         def reset_state(self):
-                            self.s_accuracy.assign(0)
+                            self.s_correct.assign(0)
+                            self.s_total.assign(0)
                             
                         def result(self):
-                            return self.s_accuracy
+                            #compute unweighted accuracy
+                            return (self.s_correct / tf.maximum(1.0, self.s_total))
                             
                         
                         

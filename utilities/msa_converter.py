@@ -276,7 +276,7 @@ def leaf_order(path, use_alternatives=False):
                         assert isinstance(entry, str), f"Alternative {alt[i][j]} for {i} in {alt_path} is not a string!"
                 
                 matches = [set([matches[i]] + alt[matches[i]]) for i in range(len(matches))]
-            
+
         return matches
     
 def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_clades = None, margin_width = 0, tuple_length = 1, 
@@ -1040,20 +1040,31 @@ def subsample_omegas(msas, ratio, separator):
     Returns:
         filtered_msas: a subset of the input
     """
-    print("subsampling with ratio: ", ratio)
+    print("\n subsampling with ratio: ", ratio, "omegas >= ", separator)
     filtered_msas = []
     n_big = 0
     n_small = 0
     random.shuffle(msas)
     
+    omega_values = []
     for msa in msas:
         small, big = msa.get_omegas(separator)
         if (n_big+len(big)) / (n_small+len(small)) >= ratio:
             filtered_msas.append(msa)
+            omega_values.append(msa.label)
             n_big += len(big)
             n_small += len(small)
+    
+    #plot omega values
+    # omega_values = list(itertools.chain.from_iterable(omega_values))
+    # counts, edges, bars = plt.hist(omega_values, density = False, bins = 40, log = True)
+    # plt.bar_label(bars)
+    # plt.ylabel("log(counts)")
+    # plt.xlabel("omega")
+    # plt.show()
             
     print(len(filtered_msas), "of total" ,len(msas), "MSAs sampled.\n Actual ratio: ",n_big/n_small)
+    random.shuffle(filtered_msas)
     return filtered_msas
 
 
