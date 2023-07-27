@@ -280,7 +280,7 @@ def leaf_order(path, use_alternatives=False):
         return matches
     
 def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_clades = None, margin_width = 0, tuple_length = 1, 
-                               use_amino_acids = False, use_codons = False, dNdS = False):
+                               use_amino_acids = False, use_codons = False, sitewise = False):
     """ Imports the training files in fasta format.
     Args:
         paths (List[str]): Location of the file(s) 
@@ -300,7 +300,7 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         * acaat---t
         *
         * The last entry in the header determine the label of the alignment. Here: label = 1.
-        * For dNdS training data the last entry is the list of labels for the codon columns.
+        * For sitewise training data the last entry is the list of labels for the codon columns.
 
     Returns:
         List[MSA]: Training examples read from the file(s).
@@ -328,7 +328,7 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         spec_in_file = [e.id.split('|')[0] for e in entries]
 
         # parse the label
-        if dNdS:
+        if sitewise:
             label = entries[0].id.split('|')[-1]
             label = list(map(float, label.split(",")))
         else:
@@ -1254,7 +1254,7 @@ def preprocess_export(dataset, species, splits = None, split_models = None,
 
 def persist_as_tfrecord(dataset, out_dir, basename, species,
                         splits=None, split_models=None, split_bins=None, 
-                        n_wanted=None, use_compression=True, dNdS = False, 
+                        n_wanted=None, use_compression=True, sitewise = False,
                         verbose=False):
     # Importing Tensorflow takes a while. Therefore to not slow down the rest 
     # of the script it is only imported once used.
@@ -1326,7 +1326,7 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
             S = np.transpose(S, (1,0,2))
 
 
-            if dNdS:
+            if sitewise:
                 if len(label) != sequence_length:
                     print("The list of labels is not suited for this sequence length")
                     continue

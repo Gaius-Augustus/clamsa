@@ -67,7 +67,8 @@ def train_models(input_dir,
           save_model_weights = True,
           log_basedir = 'logs',
           saved_weights_basedir = 'saved_weights',
-          dNdS = False,
+          sitewise = False,
+          classify = False,
           sample_weights = False,
           verbose = True,
          ):
@@ -96,7 +97,7 @@ def train_models(input_dir,
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
 
     wanted_splits = [split for split in splits.values() if split != None ]
-    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True, dNdS = dNdS) for b in basenames}
+    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True, sitewise = sitewise) for b in basenames}
 
     if any(['train' not in unmerged_datasets[b] for b in basenames]):
         raise Exception("A 'train' split must be specified!")
@@ -136,12 +137,12 @@ def train_models(input_dir,
 
         ds = datasets[split]
         # batch and reshape sequences to match the input specification of tcmc
-        ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size, dNdS)
+        ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size, sitewise)
         ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
         #ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
 
         # TODO: Pass the variable "num_classes" to database_reader.concatenate_dataset_entries().
-        if dNdS:
+        if sitewise:
             if sample_weights:
                 ds = ds.map(database_reader.concatenate_dataset_entries4, num_parallel_calls = 4)
             else:
@@ -170,7 +171,7 @@ def train_models(input_dir,
             ind = tf.pad(tf.cumsum(sequence_lengths), padding)[:-1]
             clade_ids = tf.gather(clade_ids, ind)
             
-            if dNdS:
+            if sitewise:
                 print("labels: ", labels)
                 if sample_weights:
                     print("sample weights: ", s_weights)
@@ -302,7 +303,7 @@ def train_models(input_dir,
                     
 
                 # compile the model for training
-                if dNdS:
+                if sitewise and not classify:
                     # change loss function
                     class MeanSquaredLogarithmicError(tf.keras.losses.Loss):
                         
@@ -373,6 +374,16 @@ def train_models(input_dir,
                     model.compile(optimizer = optimizer,
                                   loss = loss,
                                   metrics = [SelectionAccuracy(c=0),SelectionAccuracy(c=1),SelectionAccuracy(c=2)])
+                    
+                elif sitewise and classify:
+                    # one hot encode labels to make use of more metrics
+                    loss = tf.keras.losses.SparseCategoricalCrossentropy()
+                    optimizer = tf.keras.optimizers.Adam(0.0005)
+
+                    model.compile(optimizer = optimizer,
+                                  loss = loss,
+                                  metrics = [accuracy_metric],
+                                  )
                 else:
                     loss = tf.keras.losses.CategoricalCrossentropy()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
@@ -380,8 +391,7 @@ def train_models(input_dir,
                     model.compile(optimizer = optimizer,
                                   loss = loss,
                                   metrics = [accuracy_metric, auroc_metric],
-                )
-                        
+                                  )
                 
                 # define callbacks during training
                 checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(filepath = save_weights_path, 
@@ -430,13 +440,18 @@ def train_models(input_dir,
                 if datasets['test'] != None:
                     if verbose:
                         print("Evaluating the 'test' dataset:")
-                    if dNdS:
+                    if sitewise and not classify:
                         test_loss, test_acc0, test_acc1, test_acc2 = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
                             tf.summary.scalar('loss', test_loss, step=1)
                             tf.summary.scalar('accuracy_0', test_acc0, step=1)
                             tf.summary.scalar('accuracy_1', test_acc1, step=1)
                             tf.summary.scalar('accuracy_2', test_acc2, step=1)
+                    elif sitewise and classify:
+                        test_loss, test_acc = model.evaluate(datasets['test'])
+                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                            tf.summary.scalar('accuracy', test_acc, step=1)
+                            tf.summary.scalar('loss', test_loss, step=1)
                     else:
                         test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():

@@ -246,7 +246,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            trans_dict = None,
                            remove_stop_rows = False,
                            num_classes = 2,
-                           dNdS = False
+                           sitewise = False
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -322,7 +322,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         model = models[n]
         try:
             pred = model.predict(dataset)
-            if dNdS:
+            if sitewise:
                 preds[n] = pred.flatten()
             else:
                 if num_classes > 2:
@@ -345,7 +345,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     for p in path_ids_with_empty_sequences:
         print(f'The MSA "{p}" is empty (after) codon-aligning it. Ignoring it.')
         
-    if dNdS:
+    if sitewise:
         final_preds = {}
         for path in preds['path']:
             # get max sequence length in the fasta file
