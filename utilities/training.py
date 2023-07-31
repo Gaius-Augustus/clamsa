@@ -55,10 +55,15 @@ def train_models(input_dir,
                   "dense1_dimension": [16,],
                   "dense2_dimension": [16,],
               },
+              "tcmc_class": {
+                  "tcmc_models": [8,],
+                  "num_positions": [1,],
+              },
           },
           model_training_callbacks = {
               "tcmc_rnn": {},
               "tcmc_mean_log": {},
+              "tcmc_class": {},
           },
           batch_size = 30,
           batches_per_epoch = 100,
@@ -284,12 +289,23 @@ def train_models(input_dir,
 
 
                 # compile the model for training
-                loss = tf.keras.losses.CategoricalCrossentropy()
+                if model_name == 'tcmc_class':
+                    # CategoricalCrossentropy for the classification guesses and neg LL as a second loss
+                    LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
+                    loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss} 
+                    loss_weights = {"guesses": 1.0, "mean_loglik": 1.0}
+                    metrics = None
+                else:
+                    loss = tf.keras.losses.CategoricalCrossentropy()
+                    loss_weights = None
+                    metrics = [accuracy_metric, auroc_metric]
+
                 optimizer = tf.keras.optimizers.Adam(0.0005)
 
                 model.compile(optimizer = optimizer,
                               loss = loss,
-                              metrics = [accuracy_metric, auroc_metric],
+                              loss_weights = loss_weights,
+                              metrics = metrics,
                 )
 
 
@@ -339,11 +355,19 @@ def train_models(input_dir,
                     if verbose:
                         print("Evaluating the 'test' dataset:")
 
-                    test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
+                    if model_name == 'tcmc_class':
+                        test_loss = model.evaluate(datasets['test'])
 
-                    with tf.summary.create_file_writer(f'{rundir}/test').as_default():
-                        tf.summary.scalar('accuracy', test_acc, step=1)
-                        tf.summary.scalar('auroc', test_auroc, step=1)
-                        tf.summary.scalar('loss', test_auroc, step=1)
+                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                            tf.summary.scalar('loss', test_loss[0], step=1)
+                            tf.summary.scalar('categorical_crossentropy', test_loss[1], step=1)
+                            tf.summary.scalar('negative_loglikelihood', test_loss[2], step=1)
+                    else:
+                        test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
+
+                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                            tf.summary.scalar('accuracy', test_acc, step=1)
+                            tf.summary.scalar('auroc', test_auroc, step=1)
+                            tf.summary.scalar('loss', test_loss, step=1)
                     
     return 0
