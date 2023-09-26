@@ -242,6 +242,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            use_amino_acids = False,
                            use_codons = False,
                            tuple_length = 1,
+                           tuples_overlap = False,
                            batch_size = 30,
                            trans_dict = None,
                            remove_stop_rows = False,
@@ -265,8 +266,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                 path_ids_with_empty_sequences.add(f)
                 continue
             # filter fasta files that have no valid reference clade
-            cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict=trans_dict, remove_stop_rows=remove_stop_rows, 
-                                                        use_amino_acids = use_amino_acids, tuple_length = tuple_length, use_codons = use_codons)
+            cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict = trans_dict, remove_stop_rows = remove_stop_rows, use_amino_acids = use_amino_acids, 
+                                                        tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons)
             if cid == -1:
                 path_ids_without_reference_clade.add(f)
                 continue
@@ -285,9 +286,16 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     optimizer = tf.keras.optimizers.Adam(0.0005)
 
     for n in models:
-        models[n].compile(optimizer = optimizer,
-                          loss = loss,
-                          metrics = [accuracy_metric, auroc_metric])
+        if n == "tcmc_class":
+            LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
+            models[n].compile(optimizer = optimizer,
+                              loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
+                              loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
+                              metrics = None)
+        else:
+            models[n].compile(optimizer = optimizer,
+                              loss = loss,
+                              metrics = [accuracy_metric, auroc_metric])
         # export TCMC parameters, experimental, make this an option
         # evo_layer = models[n].get_layer(index=2)
         # evo_layer.export_matrices("rates-Q.txt", "rates-pi.txt")
@@ -354,6 +362,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
                               use_amino_acids = False,
                               use_codons = False,
                               tuple_length = 1,
+                              tuples_overlap = False,  # isnt needed rn
                               batch_size = 30,
                               num_classes = 2
 ):
@@ -374,9 +383,16 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     optimizer = tf.keras.optimizers.Adam(0.0005)
 
     for n in models:
-        models[n].compile(optimizer = optimizer,
-                          loss = loss,
-                          metrics = [accuracy_metric, auroc_metric])
+        if n == "tcmc_class":
+            LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
+            models[n].compile(optimizer = optimizer,
+                              loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
+                              loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
+                              metrics = None)
+        else:
+            models[n].compile(optimizer = optimizer,
+                              loss = loss,
+                              metrics = [accuracy_metric, auroc_metric])
 
 
     # construct a `tf.data.Dataset` from the fasta files    
