@@ -40,6 +40,7 @@ def train_models(input_dir,
               'test': {'name': 'test', 'wanted_models': [0, 1], 'interweave_models': True, 'repeat_models': [False, False]},
           },
           tuple_length = 1,
+          tuples_overlap = False,
           use_amino_acids = False,
           use_codons = False,
           model_hyperparameters = {
@@ -179,9 +180,10 @@ def train_models(input_dir,
             # decode the sequence and print some columns
             if use_amino_acids:
                 alphabet = "ARNDCEQGHILKMFPSTWYV"           
-                dec = ote.OnehotTupleEncoder.decode_tfrecord_entry(S.numpy(), alphabet = alphabet, tuple_length = tuple_length, use_bucket_alphabet = False)
+                dec = ote.OnehotTupleEncoder.decode_tfrecord_entry(S.numpy(), alphabet = alphabet, tuple_length = tuple_length, 
+                                                                   tuples_overlap = tuples_overlap, use_bucket_alphabet = False)
             else:
-                dec = ote.OnehotTupleEncoder.decode_tfrecord_entry(S.numpy(), tuple_length = tuple_length)
+                dec = ote.OnehotTupleEncoder.decode_tfrecord_entry(S.numpy(), tuple_length = tuple_length, tuples_overlap = tuples_overlap)
             print(f'first (up to) 8 alignment columns of decoded reshaped sequence: \n{dec[:,:8]}')
     except  tf.errors.InvalidArgumentError as e:
             print(e, file = sys.stderr)

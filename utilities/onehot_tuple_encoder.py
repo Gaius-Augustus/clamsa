@@ -90,8 +90,9 @@ class OnehotTupleEncoderSingleton(object):
     
     def encode(self,
                sequences, 
-               alphabet="acgt",
-               tuple_length=3, 
+               alphabet = "acgt",
+               tuple_length = 3,
+               tuples_overlap = False, 
                bucket_alphabet = {
                     'r': 'ag',
                     'y': 'ct',
@@ -105,18 +106,21 @@ class OnehotTupleEncoderSingleton(object):
                     'v': 'acg',
                     'n': 'acgt'
                 }, 
-               use_bucket_alphabet=True):
+               use_bucket_alphabet = True):
         
         E = self._encoder(alphabet, tuple_length, bucket_alphabet, use_bucket_alphabet)
         coder = lambda c: E.get(c, np.ones(len(alphabet) ** tuple_length))
     
-        coded_sequences = np.array([[coder(s[i:i+tuple_length]) for i in range(0,len(s), tuple_length)] for s in sequences])
+        coded_sequences = np.array([[coder(s[i:i+tuple_length]) for i in range(0,len(s)-tuple_length+1)] for s in sequences]) if tuples_overlap \
+            else np.array([[coder(s[i:i+tuple_length]) for i in range(0,len(s), tuple_length)] for s in sequences])
+
         return coded_sequences
 
     def decode(self,
             coded_sequences,
             alphabet = 'acgt',
             tuple_length = 3,
+            tuples_overlap = False,
             bucket_alphabet = {
                     'r': 'ag',
                     'y': 'ct',
@@ -140,7 +144,8 @@ class OnehotTupleEncoderSingleton(object):
         num_sequences = coded_sequences.shape[0]
         coded_lengths = coded_sequences.shape[1]
 
-        decoded_sequences = [''.join([D[tuple(coded_sequences[s,c,:])] for c in range(coded_lengths)]) for s in range(num_sequences)]
+        decoded_sequences = [''.join([D[tuple(coded_sequences[s,c,:])] for c in range(0, coded_lengths, tuple_length)]) for s in range(num_sequences)] if tuples_overlap \
+            else [''.join([D[tuple(coded_sequences[s,c,:])] for c in range(coded_lengths)]) for s in range(num_sequences)]
 
         return decoded_sequences
         
@@ -150,6 +155,7 @@ class OnehotTupleEncoderSingleton(object):
             coded_sequences,
             alphabet = 'acgt',
             tuple_length = 3,
+            tuples_overlap = False,
             bucket_alphabet = {
                     'r': 'ag',
                     'y': 'ct',
@@ -172,7 +178,8 @@ class OnehotTupleEncoderSingleton(object):
         num_sequences = coded_sequences.shape[0]
         coded_lengths = coded_sequences.shape[1]
 
-        decoded_sequences = np.array([[D[tuple(coded_sequences[s,c,:])] for c in range(coded_lengths)] for s in range(num_sequences)])
+        decoded_sequences = np.array([[D[tuple(coded_sequences[s,c,:])] for c in range(0, coded_lengths, tuple_length)] for s in range(num_sequences)]) if tuples_overlap \
+            else np.array([[D[tuple(coded_sequences[s,c,:])] for c in range(coded_lengths)] for s in range(num_sequences)])
 
         return decoded_sequences
 

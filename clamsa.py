@@ -110,10 +110,10 @@ Use one of the following commands:
                 type = folder_is_writable_if_exists)
 
         parser.add_argument('--refid',
-                            metavar = 'R',
-                            help = 'The index of the reference species that should be in the first MSA row.',
-                            type = int,
-                            default = None)
+                metavar = 'R',
+                help = 'The index of the reference species that should be in the first MSA row.',
+                type = int,
+                default = None)
 
         parser.add_argument('--write_nexus',
                 metavar = 'NEX_FILENAME',
@@ -123,7 +123,7 @@ Use one of the following commands:
                 metavar = 'N',
                 help = 'The sample size (=number of alignments) of the nexus output. The sample is taken uniformly from among all positive alignments in random order.',
                 type = int,
-                            default = 500)
+                default = 500)
 
         parser.add_argument('--splits', 
                 help = 'The imported MSA database will be splitted into the specified pieces. SPLITS_JSON is assumed to be a a dictionairy in JSON notation. The keys are used in conjunction with the base name to specify an output path. The values are assumed to be either positive integers or floating point numbers between zero and one. In the former case up to this number of examples will be stored in the respective split. In the latter case the number will be treated as a percentage number and the respective fraction of the data will be stored in the split. A value of -1 specifies that the remaining entries are distributed among the splits of negative size. All (filtered) examples are used in this case.',
@@ -135,7 +135,8 @@ Use one of the following commands:
                 help = 'Provide a paths CLADES to clade file(s) in Newick (.nwk) format. The species found in the input file(s) are assumed to be contained in the leave set of exactly one these clades. If so, the sequences will be aligned in the particular order specified in the clade. The names of the species in the clade(s) and in the input file(s) need to coincide.',
                 metavar = 'CLADES',
                 type = file_exists,
-                nargs = '+')
+                nargs = '+',
+                required = True)
 
         parser.add_argument('--margin_width',
                 help = 'Whether the input MSAs are padded by a MARGIN_WIDTH necleotides on both sides.',
@@ -144,10 +145,14 @@ Use one of the following commands:
                 default = 0)        
 
         parser.add_argument('--tuple_length', 
-                help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. This flag works only with the INPUT_TYPE fasta and not in combination with the --use_codons flag!',
+                help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. This flag does not work with the INPUT_TYPE phylocsf and not in combination with the --use_codons flag!',
                 metavar = 'TUPLE_LENGTH',
                 type = int,
                 default = 1)
+
+        parser.add_argument('--tuples_overlap',
+                help = 'The tuples will overlap tuple_length-1 characters. This flag only works in combination with --tuple_length > 1.',
+                action = 'store_true')
 
         parser.add_argument('--ratio_neg_to_pos',
                 help = 'Undersample the negative samples (Model ID 0) or positive examples (Model ID 1) of the input file(s) to achieve a ratio of RATIO negative per positive example.',
@@ -200,6 +205,18 @@ Use one of the following commands:
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
+        # check args
+        if args.use_codons:
+            if args.tuples_overlap:
+                print("The flags --use_codons and --tuples_overlap are incompatible.")
+                return
+            if args.tuple_length != 1:
+                print("The flag --use_codons sets the tuple length to 3, the flag --tuple_length will be ignored.")
+        
+        if args.tuples_overlap and args.tuple_length <= 1:
+                print("The flag --tuples_overlap only works with a tuple length of > 1. Please specify with --tuple_length a length of > 1.")
+                return
+
         if args.basename == None:
             args.basename = '_'.join(Path(p).stem for p in args.input_files)
             
@@ -208,6 +225,7 @@ Use one of the following commands:
                                                        reference_clades = args.clades,
                                                        margin_width = args.margin_width,
                                                        tuple_length = args.tuple_length,
+                                                       tuples_overlap = args.tuples_overlap,
                                                        use_amino_acids = args.use_amino_acids,
                                                        use_codons = args.use_codons)
 
@@ -215,6 +233,8 @@ Use one of the following commands:
             T, species = mc.import_augustus_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
+                                                          tuple_length = args.tuple_length,
+                                                          tuples_overlap = args.tuples_overlap,
                                                           use_codons = args.use_codons)
 
         if args.in_type == 'phylocsf':
@@ -318,8 +338,13 @@ Use one of the following commands:
                             help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. If n = 3, you can use the flag --use_codons instead.',
                             metavar = 'TUPLE_LENGTH',
                             type = int,
-                            default = 1)
-        
+                            default = 1
+        )
+
+        parser.add_argument('--tuples_overlap',
+                            help = 'The tuples will overlap tuple_length-1 characters. This flag only works in combination with --tuple_length > 1.',
+                            action = 'store_true'
+        )
         
         parser.add_argument('--split_specifications', 
                             help = 'see test/train.sh for an example',
@@ -416,6 +441,7 @@ Use one of the following commands:
                      args.merge_behaviour if args.merge_behaviour else 'evenly',
                      args.split_specifications,
                      args.tuple_length,
+                     args.tuples_overlap,
                      args.use_amino_acids,
                      args.use_codons,
                      args.model_hyperparameters,
@@ -462,7 +488,13 @@ Use one of the following commands:
                             help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. If n = 3, you can use the flag --use_codons instead.',
                             metavar = 'TUPLE_LENGTH',
                             type = int,
-                            default = 1)
+                            default = 1
+        )
+
+        parser.add_argument('--tuples_overlap',
+                            help = 'The tuples will overlap tuple_length-1 characters. This flag only works in combination with --tuple_length > 1.',
+                            action = 'store_true'
+        )
                 
         parser.add_argument('--use_amino_acids', 
                             help = 'Use amino acids instead of nucleotides as alphabet.',
@@ -584,6 +616,7 @@ dm3.chr1 dmel''',
                                               use_amino_acids = args.use_amino_acids,
                                               use_codons = args.use_codons,
                                               tuple_length = args.tuple_length,
+                                              tuples_overlap = args.tuples_overlap,
                                               batch_size = args.batch_size,
                                               trans_dict = trans_dict,
                                               remove_stop_rows = args.remove_stop_rows,
@@ -603,6 +636,7 @@ dm3.chr1 dmel''',
                                                  use_amino_acids = args.use_amino_acids,
                                                  use_codons = args.use_codons,
                                                  tuple_length = args.tuple_length,
+                                                 tuples_overlap = args.tuples_overlap,
                                                  batch_size = args.batch_size,
                                                  num_classes = args.num_classes
             )
