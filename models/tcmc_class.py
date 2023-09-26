@@ -42,7 +42,7 @@ def create_model(forest,
     return model
 
 
-def training_callbacks(model, logdir, wanted_callbacks):g
+def training_callbacks(model, logdir, wanted_callbacks):
 
     return []
     tcmc = model.get_layer("P_sequence_columns")
