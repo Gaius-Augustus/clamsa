@@ -27,15 +27,21 @@ def create_model(forest,
 
     # define the layers
     encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
-    tcmc_layer = TCMCProbability((tcmc_models,), forest, num_positions = num_positions, sparse_rates = sparse_rates, name="P_sequence_columns")
-    mean_log_layer = NegativeLogLikelihood(name='mean_loglik', dtype=tf.float64)
+    tcmc_layer = TCMCProbability((tcmc_models,), forest, num_positions = num_positions, sparse_rates = sparse_rates, name="P_sequence_columns") # shape (batch_size * num_positions, tcmc_models)
+    mean_log_layer = NegativeLogLikelihood(name='mean_loglik', dtype=tf.float64)  # for LL loss
+    reshape = CustomReshape(tcmc_models, num_positions, name = "Reshape") # reshape to (batch_size, tcmc_models * num_positions)
+    #dense = tf.keras.layers.Dense(1, kernel_initializer = "TruncatedNormal", activation = "sigmoid", name="dense1", dtype=tf.float64) # reduce dim num_positions to 1
+    #squeeze = tf.keras.layers.Reshape((tcmc_models,), name = "Squeeze")  # remove last dim of size 1
     guesses_layer = tf.keras.layers.Dense(num_classes, kernel_initializer = "TruncatedNormal", activation = "softmax", name = "guesses", dtype=tf.float64)
     
     # assemble the computational graph
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
     P = tcmc_layer(Encoded_sequences, clade_ids)
     LL = mean_log_layer([P, sequence_lengths])
-    guesses = guesses_layer(LL)
+    X = reshape(P)
+    #X = dense(X)
+    #X = squeeze(X)
+    guesses = guesses_layer(X)
     
     model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = [guesses, LL], name = name)
 
@@ -88,7 +94,31 @@ class NegativeLogLikelihood(tf.keras.layers.Layer):
     def from_config(cls, config):
         return cls(**config)
 
+    
+class CustomReshape(tf.keras.layers.Layer):
+    def __init__(self, M, k, **kwargs):
+        super(CustomReshape, self).__init__(**kwargs)
+        self.k = k
+        self.M = M
 
+    def build(self, input_shape):
+        super(CustomReshape, self).build(input_shape)
+
+    @tf.function
+    def call(self, inputs, training = None):
+        #X = tf.transpose(tf.reshape(inputs, (-1, self.k, self.M)), perm = (0,2,1))  # shape (B,M,k)
+        X = tf.reshape(inputs, (-1, self.k * self.M))  # shape (B, M * k)
+        return X
+
+    def get_config(self):
+        base_config = super(CustomReshape, self).get_config()
+        return base_config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
+     
 class Encode(tf.keras.layers.Layer):
     """Encoding the alphabet"""
     def __init__(self, new_size, **kwargs):
