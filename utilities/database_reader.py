@@ -144,7 +144,7 @@ class DatasetSplitSpecification(object):
 
 
 
-def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, seed = None, buffer_size = 1000, used_compression = True, should_shuffle=False):
+def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, fixed_sequence_length = None, seed = None, buffer_size = 1000, used_compression = True, should_shuffle=False):
     '''
     Reads all tfrecord files in a folder with a given base name and returns them in splits.
 
@@ -154,6 +154,7 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
         wanted_splits (list(DatasetSplitSpecification)): All splits and models of those splits that should be read given configurations.
         num_leaves (list(int)): Number of leaves occuring in the forest to be studied for each tree.
         alphabet_size (int): Number of characters in the alphabet the files have been written with (e.g. `3` for codon sequences or `1` for nucleotide sequences)
+        fixed_sequence_length (int): Only get sequences with length fixed_sequence_length, if None get all sequences
         seed (int): Random seed to be used.
         buffer_size (int): Caching parameter for the Tensorflow datasets.
         used_compression (bool): Whether the datasets have been persisted with GZIP compression or not.
@@ -188,6 +189,10 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, see
                                         compression_type = compression_type, 
                                         buffer_size = buffer_size) \
                 .map(parser, num_parallel_calls = 2)
+
+                # if fixed sequence length, filter out sequences with correct length and discard others
+                if fixed_sequence_length:
+                    dataset = dataset.filter(lambda model, clade_id, sequence_length, sequence_onehot: sequence_length == fixed_sequence_length)
 
                 # all datasets of the same model in this split are concatenated
                 split_ds[model] =  split_ds[model].concatenate(dataset) if split_ds[model] != None else dataset

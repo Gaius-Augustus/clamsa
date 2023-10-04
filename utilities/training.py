@@ -94,12 +94,15 @@ def train_models(input_dir,
             except TypeError as te:
                 raise Exception(f"Invalid split specification for '{k}': {split_specifications[k]}") from te
 
+    # fixed sequence length for ClaSS
+    fixed_sequence_length = model_hyperparameters["tcmc_class"]["num_positions"][0] if "tcmc_class" in model_hyperparameters else None
 
     # read the datasets for each wanted basename
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
 
     wanted_splits = [split for split in splits.values() if split != None ]
-    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
+    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, 
+                        fixed_sequence_length = fixed_sequence_length, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
 
     if any(['train' not in unmerged_datasets[b] for b in basenames]):
         raise Exception("A 'train' split must be specified!")
@@ -184,7 +187,7 @@ def train_models(input_dir,
                                                                    tuples_overlap = tuples_overlap, use_bucket_alphabet = False)
             else:
                 dec = ote.OnehotTupleEncoder.decode_tfrecord_entry(S.numpy(), tuple_length = tuple_length, tuples_overlap = tuples_overlap)
-            print(f'first (up to) 8 alignment columns of decoded reshaped sequence: \n{dec[:,:8]}')
+            print(f'first (up to) 8 alignment columns of decoded reshaped sequence: \n{dec[:,:8]}')      
     except  tf.errors.InvalidArgumentError as e:
             print(e, file = sys.stderr)
             print("\nClaMSA: InvalidArgumentError during training. ", file = sys.stderr)
@@ -294,8 +297,8 @@ def train_models(input_dir,
                 if model_name == 'tcmc_class':
                     # CategoricalCrossentropy for the classification guesses and neg LL as a second loss
                     LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-                    loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss} 
-                    loss_weights = {"guesses": 1.0, "mean_loglik": 1.0}
+                    loss = [tf.keras.losses.CategoricalCrossentropy(), LL_loss]
+                    loss_weights = [1.0, 1.0]
                     metrics = None
                 else:
                     loss = tf.keras.losses.CategoricalCrossentropy()
