@@ -64,7 +64,8 @@ class MSA(object):
 
         # translate the list of sequences and convert it to a numpy matrix
         # non-alphabet characters are replaced by -1
-        self._coded_sequences = ote.OnehotTupleEncoder.encode(ca, alphabet = alphabet, tuple_length = 1, tuples_overlap = self.tuples_overlap, 
+        tuple_length = self.tuple_length if self.tuples_overlap else 1
+        self._coded_sequences = ote.OnehotTupleEncoder.encode(ca, alphabet = alphabet, tuple_length = tuple_length, tuples_overlap = self.tuples_overlap, 
                                                               use_bucket_alphabet=False)
 
         # update lazy loading
