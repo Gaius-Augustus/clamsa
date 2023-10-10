@@ -200,11 +200,11 @@ Use one of the following commands:
                 nargs = '+')
         
         parser.add_argument('--sitewise',
-                help = 'Wether the dataset is for training a sitewise model, one label for each site is expected (currently only supports fasta as input).',
+                help = 'Whether the dataset is for training a sitewise (=columnwise) model, one label for each site is expected (currently only supports fasta as input).',
                 action = 'store_true')
         
         parser.add_argument('--subsample_small_omega',
-                help = 'Undersample examples with small dNdS to achieve the wanted ratio OMEGA_RATIO of omegas >= s to omega < s (default: s = 1.0)',
+                help = 'Undersample examples with small dNdS to achieve the desired OMEGA_RATIO of omegas >= s to omega < s (default: s = 1.0)',
                 metavar = 'OMEGA_RATIO',
                 type = float)
         
@@ -219,7 +219,11 @@ Use one of the following commands:
 
         if args.basename == None:
             args.basename = '_'.join(Path(p).stem for p in args.input_files)
-            
+
+        if args.sitewise and args.in_type != 'fasta':
+            print("Datasets for the sitewise model are currently only supported in fasta format")
+            return
+
         if args.in_type == 'fasta':
             T, species = mc.import_fasta_training_file(args.input_files,
                                                        reference_clades = args.clades,
@@ -230,10 +234,6 @@ Use one of the following commands:
                                                        sitewise = args.sitewise)
 
         if args.in_type == 'augustus':
-            if args.sitewise:
-                print("Datasets for the sitewise model are currently only supported in fasta format")
-                return
-            
             T, species = mc.import_augustus_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
@@ -241,10 +241,6 @@ Use one of the following commands:
                                                           
 
         if args.in_type == 'phylocsf':
-            if args.sitewise:
-                print("Datasets for the sitewise model are currently only supported in fasta format")
-                return
-            
             T, species = mc.import_phylocsf_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
@@ -441,15 +437,15 @@ Use one of the following commands:
         )
         
         parser.add_argument('--sitewise',
-                            help = 'Wether the training is for estimating sitewise values (uses different datasets for training)',
+                            help = 'Whether the training is for estimating sitewise values (uses different datasets for training)',
                             action = 'store_true')
         
         parser.add_argument('--sample_weights',
-                            help = 'Wether sample weights should be used for training (currently creates weights 0.05, 1.0, 3.5 for dNdS values omega <= 0.8, 0.8 < omega < 1.2, 1.2 <= omega) ',
+                            help = 'Whether sample weights should be used for training (currently creates weights 0.05, 1.0, 3.5 for dNdS values omega <= 0.8, 0.8 < omega < 1.2, 1.2 <= omega) ',
                             action = 'store_true')
         
         parser.add_argument('--classify',
-                            help = 'Wether the training is for classification of sitewise classes (tcmc_dNdS_class). If sitewise but classify is not specified, a regression model is expected (tcmc_dNdS).',
+                            help = 'Whether the training is for classification of sitewise classes (tcmc_dNdS_class). If sitewise but classify is not specified, a regression model is expected (tcmc_dNdS).',
                             action = 'store_true')
                 
         parser.add_argument('--verbose', 
@@ -663,7 +659,7 @@ dm3.chr1 dmel''',
 
         if args.in_type == 'tfrecord':
             if args.sitewise:
-                print("sitewise prediction currently only works on fasta files")
+                print("Sitewise prediction currently only works on fasta files")
                 return
             
             #import on demand (importing tf is costly)
@@ -683,8 +679,8 @@ dm3.chr1 dmel''',
             
         
         if args.sitewise:
-            #write dictionary to file
-            #for a classification task: probabilitys of both classes are output in sucession
+            # write dictionary to file
+            # for a classification task: probabilitys of both classes are output in succession
             if args.out_csv is None:
                 print(preds, end = "")
             else:
@@ -699,7 +695,6 @@ dm3.chr1 dmel''',
         else:
             # construct a dataframe from the predictions
             df = pd.DataFrame.from_dict(preds)
-    
     
             from io import StringIO
             output = StringIO()
