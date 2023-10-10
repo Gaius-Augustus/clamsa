@@ -142,12 +142,17 @@ def train_models(input_dir,
         #ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
 
         # TODO: Pass the variable "num_classes" to database_reader.concatenate_dataset_entries().
-        if sitewise:
+        if sitewise and not classify:
             if sample_weights:
                 ds = ds.map(database_reader.concatenate_dataset_entries4, num_parallel_calls = 4)
             else:
                 ds = ds.map(database_reader.concatenate_dataset_entries3, num_parallel_calls = 4)
-            
+        elif sitewise and classify:
+            if sample_weights:
+                ds = ds.map(database_reader.concatenate_dataset_entries6, num_parallel_calls = 4)
+            else:
+                ds = ds.map(database_reader.concatenate_dataset_entries5, num_parallel_calls = 4)
+                
         elif num_classes == 2:
             ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
         elif num_classes == 3:
@@ -299,7 +304,7 @@ def train_models(input_dir,
                 if verbose:
                     print(f'Architecture of the model "{model_name}" with the current hyperparameters:')
                     model.summary()
-                    #tf.keras.utils.plot_model(model, show_shapes=True)
+                    #tf.keras.utils.plot_model(model,show_shapes = True, show_layer_activations=True)
                     
 
                 # compile the model for training
@@ -373,16 +378,18 @@ def train_models(input_dir,
                     optimizer = tf.keras.optimizers.Adam(0.0005)
                     model.compile(optimizer = optimizer,
                                   loss = loss,
-                                  metrics = [SelectionAccuracy(c=0),SelectionAccuracy(c=1),SelectionAccuracy(c=2)])
+                                  metrics = [SelectionAccuracy(c=0),SelectionAccuracy(c=1),SelectionAccuracy(c=2)],
+                                  weighted_metrics = [],)
                     
                 elif sitewise and classify:
                     # one hot encode labels to make use of more metrics
-                    loss = tf.keras.losses.SparseCategoricalCrossentropy()
+                    loss = tf.keras.losses.CategoricalCrossentropy()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
 
                     model.compile(optimizer = optimizer,
                                   loss = loss,
                                   metrics = [accuracy_metric],
+                                  weighted_metrics = [],
                                   )
                 else:
                     loss = tf.keras.losses.CategoricalCrossentropy()

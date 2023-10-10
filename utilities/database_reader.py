@@ -317,8 +317,52 @@ def concatenate_dataset_entries4(labels, clade_ids, sequence_lengths, sequences)
     X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
     y = concat_labels
     
-    sample_weights = tf.where(tf.math.less_equal(concat_labels, 0.8), tf.constant(0.05), tf.constant(1.0))
-    sample_weights = tf.where(tf.math.greater_equal(concat_labels, 1.2), tf.constant(3.5), sample_weights)
+    sample_weights = tf.where(tf.math.less_equal(concat_labels, 0.8), tf.constant(0.3), tf.constant(1.0))
+    sample_weights = tf.where(tf.math.greater_equal(concat_labels, 1.2), tf.constant(1.0), sample_weights)
+    
+    return (X,y, sample_weights)
+
+def concatenate_dataset_entries5(labels, clade_ids, sequence_lengths, sequences):
+    """
+    Preprocessing function to concatenate a zero-padded batch of
+    variable-length sequences into a single sequence. (for sitewise classification)
+    """
+    
+    concat_sequences = tf.cast(
+        tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
+        dtype = tf.float64)
+    
+    concat_labels = tf.cast(
+        tf.boolean_mask(labels, tf.sequence_mask(sequence_lengths)),
+        dtype = tf.int32)
+    
+    labels_onehot = tf.one_hot(concat_labels, depth = 2)
+    
+    X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
+    y = labels_onehot
+    
+    return (X,y)
+
+def concatenate_dataset_entries6(labels, clade_ids, sequence_lengths, sequences):
+    """
+    Preprocessing function to concatenate a zero-padded batch of
+    variable-length sequences into a single sequence. (for sitewise classification, with sample weights)
+    """
+    
+    concat_sequences = tf.cast(
+        tf.boolean_mask(sequences, tf.sequence_mask(sequence_lengths)), 
+        dtype = tf.float64)
+    
+    concat_labels = tf.cast(
+        tf.boolean_mask(labels, tf.sequence_mask(sequence_lengths)),
+        dtype = tf.int32)
+    
+    labels_onehot = tf.one_hot(concat_labels, depth = 2)
+    
+    X = (concat_sequences, tf.repeat(clade_ids, sequence_lengths, axis=0), sequence_lengths)
+    y = labels_onehot
+    
+    sample_weights = tf.where(tf.math.equal(tf.cast(concat_labels, dtype = tf.float32), 1.0), tf.constant(0.3), tf.constant(1.0))
     
     return (X,y, sample_weights)
 
