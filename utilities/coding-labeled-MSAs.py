@@ -1,4 +1,4 @@
-# Compile MSAs for ClamSA sitewise that are labeled with whether a codon MSA site is coding or not 
+# Compile MSAs for ClamSA sitewise that are labeled with whether a codon MSA site is coding or not
 from Bio import AlignIO # to read MAF files
 from intervaltree import Interval, IntervalTree
 import argparse
@@ -30,7 +30,7 @@ def read_gff(gff_file):
     if '.gz' in pathlib.Path(gff_file).suffixes:
         opener = gzip.open
 
-    with opener(gff_file, "rt") as gff:    
+    with opener(gff_file, "rt") as gff:
         for line in gff:
             if line[0] == '#':
                 continue
@@ -83,7 +83,7 @@ def process_MSA(msa):
 
 
 # stream through the MSA file
- 
+
 # conditionally open a regular text or a gzip file
 opener = open # for regular text files
 if '.gz' in pathlib.Path(args.msa).suffixes:
