@@ -596,6 +596,10 @@ dm3.chr1 dmel''',
                             help='Predict sitewise values (needs a trained sitewise model). Currently only works on fasta files',
                             action='store_true',
         )
+        parser.add_argument('--classify',
+                            help='Predict sitewise classes (needs a trained sitewise classification model). Currently only works on fasta files',
+                            action='store_true',
+        )
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
@@ -649,7 +653,8 @@ dm3.chr1 dmel''',
                                               trans_dict = trans_dict,
                                               remove_stop_rows = args.remove_stop_rows,
                                               num_classes = args.num_classes,
-                                              sitewise = args.sitewise
+                                              sitewise = args.sitewise,
+                                              classify = args.classify
             )
 
         if args.in_type == 'tfrecord':

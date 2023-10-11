@@ -188,6 +188,7 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
 
     # read the sequences and trim them if wanted
     sequences = [str(rec.seq).lower() for rec in entries]
+
     sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
     msa = msa_converter.MSA(
@@ -206,7 +207,6 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
     
     # Infer the length of the sequences
     sequence_length = len(coded_sequences[1])  
-    
     if sequence_length == 0:
         return None
 
@@ -246,7 +246,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            trans_dict = None,
                            remove_stop_rows = False,
                            num_classes = 2,
-                           sitewise = False
+                           sitewise = False,
+                           classify = False
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -274,7 +275,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
             if cid == -2:
                 path_ids_with_empty_sequences.add(f)
                 continue
-
+            
             yield cid, sl, S
 
     
@@ -347,19 +348,26 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         
     if sitewise:
         final_preds = {}
+        
         for path in preds['path']:
-            # get max sequence length in the fasta file
-            max_seq_len = 0
+            prev_seq_len = -1
             records = SeqIO.parse(path, "fasta")
+            
             for record in records:
                 seq_len = int(len(record.seq)/3)
-                if seq_len > max_seq_len:
-                    max_seq_len = seq_len
+                if classify:
+                    # 2 outputs per site for 2 classes
+                    seq_len = 2*seq_len
+                #check if the sequence lengths in one file are different
+                if seq_len != prev_seq_len and prev_seq_len != -1:
+                    print("All sequences in one MSA should have the same length! Values could possibly be not correctly assigned to the MSA")
+                prev_seq_len = seq_len
+
             # divide the predictions into parts corresponding to the right sequence 
             # (currently only works for 1 model)
             for n in models:
-                final_preds[path] = preds[n][:max_seq_len]
-                preds[n] = preds[n][max_seq_len:]
+                final_preds[path] = preds[n][:seq_len]
+                preds[n] = preds[n][seq_len:]
                 
         return final_preds
     else:

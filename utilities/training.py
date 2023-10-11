@@ -142,11 +142,16 @@ def train_models(input_dir,
         #ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
 
         # TODO: Pass the variable "num_classes" to database_reader.concatenate_dataset_entries().
-        if sitewise:
+        if sitewise and not classify:
             if sample_weights:
                 ds = ds.map(database_reader.concatenate_dataset_entries4, num_parallel_calls = 4)
             else:
                 ds = ds.map(database_reader.concatenate_dataset_entries3, num_parallel_calls = 4)
+        elif sitewise and classify:
+            if sample_weights:
+                ds = ds.map(database_reader.concatenate_dataset_entries6, num_parallel_calls = 4)
+            else:
+                ds = ds.map(database_reader.concatenate_dataset_entries5, num_parallel_calls = 4)
             
         elif num_classes == 2:
             ds = ds.map(database_reader.concatenate_dataset_entries, num_parallel_calls = 4)
@@ -311,13 +316,13 @@ def train_models(input_dir,
                             return tf.reduce_mean(tf.math.square(tf.math.log(y_pred) - tf.math.log(y_true)), axis=-1)
                         
                     
-                    class SelectionAccuracy(tf.keras.metrics.Metric):
+                    class SelectionRecall(tf.keras.metrics.Metric):
                         """
                            classifies selection into 3 classes
-                           and returns accuracy for a single class c.
+                           and returns recall for a single class c.
                         """
-                        def __init__(self, name="sel_accuracy", c = 0, **kwargs):
-                            super(SelectionAccuracy, self).__init__(name=name+str(c), **kwargs)
+                        def __init__(self, name="sel_recall", c = 0, **kwargs):
+                            super(SelectionRecall, self).__init__(name=name+str(c), **kwargs)
                             self.s_correct = self.add_weight(name = "sc", initializer="zeros")
                             self.s_total = self.add_weight(name = "st", initializer="zeros")
                             self.c = c
@@ -364,25 +369,82 @@ def train_models(input_dir,
                             self.s_total.assign(0)
                             
                         def result(self):
-                            #compute unweighted accuracy
+                            #compute recall
                             return (self.s_correct / tf.maximum(1.0, self.s_total))
                             
+                    class SelectionPrecision(tf.keras.metrics.Metric):
+                        """
+                           classifies selection into 3 classes
+                           and returns precision for a single class c.
+                        """
+                        def __init__(self, name="sel_precision", c = 0, **kwargs):
+                            super(SelectionPrecision, self).__init__(name=name+str(c), **kwargs)
+                            self.s_correct = self.add_weight(name = "sc", initializer="zeros")
+                            self.s_total = self.add_weight(name = "st", initializer="zeros")
+                            self.c = c
+                        
+                        def update_state(self, y_true, y_pred, sample_weight=None):
+                            
+                            # write 2 for positive selection(omega>=1.2)
+                            true_pos = tf.where(tf.math.greater_equal(y_true, 1.2), tf.constant(2.0, dtype=tf.float64), y_true)
+                            pred_pos = tf.where(tf.math.greater_equal(y_pred, 1.2), tf.constant(2.0, dtype=tf.float64), y_pred)
+                            
+                            #write 0 for negative(omega <= 0.8)
+                            true_pos_neg = tf.where(tf.math.less_equal(true_pos, 0.8), tf.constant(0.0, dtype=tf.float64), true_pos)
+                            pred_pos_neg = tf.where(tf.math.less_equal(pred_pos, 0.8), tf.constant(0.0, dtype=tf.float64), pred_pos)
+                            
+                            #write 1 for neutral(1.2 >= omega >= 0.8)
+                            neutral_sel_mask_true = tf.math.logical_and(
+                                                    tf.math.not_equal(tf.constant(2.0, dtype=tf.float64), true_pos_neg),
+                                                    tf.math.not_equal(tf.constant(0.0, dtype=tf.float64), true_pos_neg))
+                            
+                            neutral_sel_mask_pred = tf.math.logical_and(
+                                                    tf.math.not_equal(tf.constant(2.0, dtype=tf.float64), pred_pos_neg),
+                                                    tf.math.not_equal(tf.constant(0.0, dtype=tf.float64), pred_pos_neg))
+                            
+                            true_all = tf.where(neutral_sel_mask_true, tf.constant(1.0, dtype=tf.float64), true_pos_neg)
+                            pred_all = tf.where(neutral_sel_mask_pred, tf.constant(1.0, dtype=tf.float64), pred_pos_neg)
+                            
+                            
+                            
+                            cf_mat = tf.math.confusion_matrix(tf.squeeze(true_all), tf.squeeze(pred_all), num_classes=3)
+                            
+                            #number of correct predictions for each class
+                            diag = tf.linalg.tensor_diag_part(cf_mat)
+                            
+                            #total number of predictions for each class
+                            total_per_class = tf.reduce_sum(cf_mat, axis=0)
+                            
+                            
+                            #only assign values for class c (metric results can't be arrays?)
+                            self.s_correct.assign_add(tf.cast(tf.gather(diag, self.c), dtype = tf.float32))
+                            self.s_total.assign_add(tf.cast(tf.gather(total_per_class, self.c), dtype = tf.float32))
+                            
+                        def reset_state(self):
+                            self.s_correct.assign(0)
+                            self.s_total.assign(0)
+                            
+                        def result(self):
+                            #compute precision
+                            return (self.s_correct / tf.maximum(1.0, self.s_total))
+                        
                         
                         
                     loss = MeanSquaredLogarithmicError()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
                     model.compile(optimizer = optimizer,
                                   loss = loss,
-                                  metrics = [SelectionAccuracy(c=0),SelectionAccuracy(c=1),SelectionAccuracy(c=2)])
+                                  metrics = [SelectionRecall(c=0),SelectionRecall(c=1),SelectionRecall(c=2),
+                                            SelectionPrecision(c=0), SelectionPrecision(c=1), SelectionPrecision(c=2)])
                     
                 elif sitewise and classify:
-                    # one hot encode labels to make use of more metrics
-                    loss = tf.keras.losses.SparseCategoricalCrossentropy()
+                    loss = tf.keras.losses.CategoricalCrossentropy()
                     optimizer = tf.keras.optimizers.Adam(0.0005)
 
                     model.compile(optimizer = optimizer,
                                   loss = loss,
                                   metrics = [accuracy_metric],
+                                  weighted_metrics = [],
                                   )
                 else:
                     loss = tf.keras.losses.CategoricalCrossentropy()
@@ -433,24 +495,72 @@ def train_models(input_dir,
                 
                 plt.plot(history.history['loss'])
                 plt.plot(history.history['val_loss'])
-                plt.savefig("plot.png")
+                plt.title("Model Loss")
+                plt.ylabel("Loss")
+                plt.xlabel("Epoche")
+                plt.legend(["train", "val"], loc = "upper right")
+                plt.savefig("loss_plot.png")
                 #plt.show()
+                plt.clf()
+                
+                if classify:
+                    plt.plot(history.history['val_accuracy'])   
+                    plt.title("Modell \"accuracy\"")
+                    plt.ylabel("\"accuracy\"")
+                    plt.xlabel("Epoche")
+                    plt.legend(["\"accuracy\""], loc = "lower right")
+                    plt.savefig("accuracy_plot.png")
+                    plt.clf()
+                    
+                    #plt.plot(history.history['val_auroc'])   
+                    #plt.title("Modell AUC")
+                    #plt.ylabel("AUC")
+                    #plt.xlabel("Epoche")
+                    #plt.legend(["AUC"], loc = "lower right")
+                    #plt.savefig("auroc_plot.png")
+                    #plt.clf()
+
+                else:
+                    plt.plot(history.history['val_sel_recall0'])
+                    plt.plot(history.history['val_sel_recall1'])
+                    plt.plot(history.history['val_sel_recall2'])     
+                    plt.title("Modell Sensitivität")
+                    plt.ylabel("Sensitivität")
+                    plt.xlabel("Epoche")
+                    plt.legend(["Sensitivität0", "Sensitivität1", "Sensitivität2"], loc = "lower right")
+                    plt.savefig("recall_plot.png")
+                    plt.clf()
+                    
+                    plt.plot(history.history['val_sel_precision0'])
+                    plt.plot(history.history['val_sel_precision1'])
+                    plt.plot(history.history['val_sel_precision2'])     
+                    plt.title("Modell Genauigkeit")
+                    plt.ylabel("Genauigkeit")
+                    plt.xlabel("Epoche")
+                    plt.legend(["Genauigkeit0", "Genauigkeit1", "Genauigkeit2"], loc = "lower right")
+                    plt.savefig("precision_plot.png")
+                    plt.clf()
 
                 # load 'best' model weights and eval the test dataset
                 if datasets['test'] != None:
                     if verbose:
                         print("Evaluating the 'test' dataset:")
                     if sitewise and not classify:
-                        test_loss, test_acc0, test_acc1, test_acc2 = model.evaluate(datasets['test'])
+                        test_loss, test_rec0, test_rec1, test_rec2, test_prec0, test_prec1, test_prec2 = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
                             tf.summary.scalar('loss', test_loss, step=1)
-                            tf.summary.scalar('accuracy_0', test_acc0, step=1)
-                            tf.summary.scalar('accuracy_1', test_acc1, step=1)
-                            tf.summary.scalar('accuracy_2', test_acc2, step=1)
+                            tf.summary.scalar('recall_0', test_rec0, step=1)
+                            tf.summary.scalar('recall_1', test_rec1, step=1)
+                            tf.summary.scalar('recall_2', test_rec2, step=1)
+                            
+                            tf.summary.scalar('precision_0', test_prec0, step=1)
+                            tf.summary.scalar('precision_1', test_prec1, step=1)
+                            tf.summary.scalar('precision_2', test_prec2, step=1)
                     elif sitewise and classify:
                         test_loss, test_acc = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
                             tf.summary.scalar('accuracy', test_acc, step=1)
+                            #tf.summary.scalar('auroc', test_auroc, step=1)
                             tf.summary.scalar('loss', test_loss, step=1)
                     else:
                         test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
