@@ -105,7 +105,7 @@ Use one of the following commands:
 
         parser.add_argument('--basename',
                 metavar = 'BASENAME',
-                help = 'The base name of the output files to be generated. By default a concatination of the input files is used.')
+                help = 'The base name of the output files to be generated. By default a concatenation of the input files is used.')
 
         parser.add_argument('--phylocsf_out_dir',
                 help = 'Specifies that the MSA database should (also) be converted to PhyloCSF format.',
@@ -214,6 +214,10 @@ Use one of the following commands:
                 type = float,
                 default=1.0)
 
+        parser.add_argument('--no_codon_alignment',
+                help = 'Assume that the input MSA is already codon-aligned.',
+                action = 'store_true')
+
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
@@ -305,7 +309,8 @@ Use one of the following commands:
                         splits, split_models, split_bins, n_wanted,
                         use_compression = args.use_compression,
                         sitewise = args.sitewise,
-                        verbose = args.verbose)
+                        verbose = args.verbose,
+                        no_codon_alignment = args.no_codon_alignment)
 
                 print(f'The datasets have sucessfully been saved in tfrecord files.')
             
@@ -350,7 +355,7 @@ Use one of the following commands:
         
         parser.add_argument('--merge_behaviour',
                             metavar='MERGE_BEHAVIOUR',
-                            help='In which ratio the respective splits for each basename shall be merged. The possible modes are: "evenly", "w_1 ... w_n". Where "evenly" means all basenames have the same weight. A set of costum weights can be given directly. Default is "evenly".',
+                            help='In which ratio the respective splits for each basename shall be merged. The possible modes are: "evenly", "w_1 ... w_n". Where "evenly" means all basenames have the same weight. A set of custom weights can be given directly. Default is "evenly".',
                             nargs='+',
         ) 
         # possible extensions:  "columns", "sequences"

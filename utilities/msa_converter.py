@@ -43,6 +43,7 @@ class MSA(object):
         self.tuple_length = tuple_length
         self.fname = fname
         self.use_codons = use_codons
+        self.is_codon_aligned = False
     @property
     def coded_sequences(self, alphabet = "acgt"):
         if self.use_amino_acids:
@@ -86,7 +87,10 @@ class MSA(object):
             tbl = str.maketrans(alphabet, rev_alphabet)
             sequences = [s[::-1].translate(tbl) for s in sequences]
 
-        cali, self.in_frame_stops = tuple_alignment(sequences, gap_symbols, frame = self.frame, tuple_length = c)
+        if not self.is_codon_aligned:
+            cali, self.in_frame_stops = tuple_alignment(sequences, gap_symbols, frame = self.frame, tuple_length = c)
+        else:
+            cali = sequences
         return cali
 
     @property
@@ -279,8 +283,9 @@ def leaf_order(path, use_alternatives=False):
 
         return matches
     
-def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_clades = None, margin_width = 0, tuple_length = 1, 
-                               use_amino_acids = False, use_codons = False, sitewise = False):
+def import_fasta_training_file(paths, undersample_neg_by_factor = 1.,
+                                reference_clades = None, margin_width = 0, tuple_length = 1,
+                                use_amino_acids = False, use_codons = False, sitewise = False):
     """ Imports the training files in fasta format.
     Args:
         paths (List[str]): Location of the file(s) 
@@ -308,9 +313,22 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
 
     """
 
+    def species_name(fasta_hdr):
+        """
+         extract the species name from the ">" line in fasta, e.g.
+        Homo_sapiens.chr17:63832|0,0,1,1,0 -> Homo_sapiens
+        Bos_taurus -> Bos_taurus
+        """
+        mafpatstr = r"(\w+)(?:\..*)?\|?"
+        m = re.match(mafpatstr, fasta_hdr)
+        if not m:
+           print ("FASTA header format not recognized. Perhaps special characters in",
+                  fasta_hdr)
+        return m.group(1)
+
     training_data = []
 
-    # If clades are specified the leave species will be imported.
+    # If clades are specified, the leaf species will be imported.
     species = [leaf_order(c) for c in reference_clades] if reference_clades != None else []
 
     # total number of bytes to be read
@@ -320,65 +338,82 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
     pbar = tqdm(total = total_bytes, desc = "Parsing FASTA file(s)", unit = 'b', unit_scale = True)
 
     for path in paths:
-        fasta = gzip.open(path, 'rt') if path.endswith('.gz') else open(path, 'r')            
-        bytes_read = fasta.tell()
-        entries = [rec for rec in SeqIO.parse(fasta, "fasta")]
+        fasta = gzip.open(path, 'rt') if path.endswith('.gz') else open(path, 'r')
+        bytes_read = fasta.tell() # byte reading progress (here 0)
+        # split a FASTA file with potentially multiple MSAs at the empty lines
+        while True:
+            if not fasta:
+                break
+            nextMSAsection = ""
+            while True:
+                line = fasta.readline()
+                if line == "\n" or not line:
+                    break
+                nextMSAsection += line
+            if nextMSAsection == "":
+                break
+            #print ("nextMSAsection=\n", nextMSAsection)
+            msa_io = io.StringIO(nextMSAsection)
 
-        # parse the species names
-        spec_in_file = [e.id.split('|')[0] for e in entries]
+            #entries = [rec for rec in SeqIO.parse(fasta, "fasta")]
+            entries = [rec for rec in SeqIO.parse(msa_io, "fasta")]
+            # parse the species names
+            spec_in_file = [species_name(e.id) for e in entries]
+            # parse the label
+            if sitewise:
+                # assume that the first record is from the references and contains the labels
+                label = entries[0].id.split('|')[-1]
+                label = list(map(float, label.split(",")))
+            else:
+                try:
+                    label = int(entries[0].id.split('|')[-1])
+                except ValueError:
+                    print ("Wrong format in FASTA header. Cannot extract integer class label from ",{entries[0].id}, file=sys.stderr)
+            # compare them with the given references
+            ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i]] for s in spec_in_file]
 
-        # parse the label
-        if sitewise:
-            label = entries[0].id.split('|')[-1]
-            label = list(map(float, label.split(",")))
-        else:
-            label = int(entries[0].id.split('|')[-1]) 
+            # check if these are contained in exactly one reference clade
+            n_refs = [len(x) for x in ref_ids]
 
-        # compare them with the given references
-        ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i]] for s in spec_in_file]
+            if 0 == min(n_refs) or max(n_refs) > 1:
+                continue
 
-        # check if these are contained in exactly one reference clade
-        n_refs = [len(x) for x in ref_ids]
+            ref_ids = [x[0] for x in ref_ids]
 
-        if 0 == min(n_refs) or max(n_refs) > 1:
-            continue
+            if len(set(r for (r,i) in ref_ids)) > 1:
+                continue
 
-        ref_ids = [x[0] for x in ref_ids]
+            # read the sequences and trim them if wanted
+            if not use_amino_acids:
+                sequences = [str(rec.seq).lower() for rec in entries]
+            else:
+                sequences = [str(rec.seq) for rec in entries]
+            sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
-        if len(set(r for (r,i) in ref_ids)) > 1:
-            continue
+            # decide whether the upcoming entry should be skipped
+            skip_entry = label == 0 and random.random() > 1. / undersample_neg_by_factor
+            if skip_entry:
+                fasta.close()
+                continue
 
-        # read the sequences and trim them if wanted        
-        if not use_amino_acids:
-            sequences = [str(rec.seq).lower() for rec in entries]
-        else:
-            sequences = [str(rec.seq) for rec in entries]
-        sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
+            msa = MSA(
+                label = label,
+                chromosome_id = None,
+                start_index = None,
+                end_index = None,
+                is_on_plus_strand = True,
+                frame = 0,
+                spec_ids = ref_ids,
+                offsets = [],
+                sequences = sequences,
+                use_amino_acids = use_amino_acids,
+                tuple_length = tuple_length,
+                use_codons = use_codons
+            )
+            training_data.append(msa)
 
-        # decide whether the upcoming entry should be skipped
-        skip_entry = label == 0 and random.random() > 1. / undersample_neg_by_factor
-        if skip_entry:
-            fasta.close()
-            continue
-
-        msa = MSA(
-            label = label,
-            chromosome_id = None, 
-            start_index = None,
-            end_index = None,
-            is_on_plus_strand = True,
-            frame = 0,
-            spec_ids = ref_ids,
-            offsets = [],
-            sequences = sequences,
-            use_amino_acids = use_amino_acids,
-            tuple_length = tuple_length,
-            use_codons = use_codons
-        )        
-        training_data.append(msa)
-
-        pbar.update(fasta.tell() - bytes_read)
-        bytes_read = fasta.tell()
+            pbar.update(fasta.tell() - bytes_read)
+            bytes_read = fasta.tell()
         fasta.close()
 
     return training_data, species
@@ -1255,7 +1290,7 @@ def preprocess_export(dataset, species, splits = None, split_models = None,
 def persist_as_tfrecord(dataset, out_dir, basename, species,
                         splits=None, split_models=None, split_bins=None, 
                         n_wanted=None, use_compression=True, sitewise = False,
-                        verbose=False):
+                        verbose=False, no_codon_alignment=False):
     # Importing Tensorflow takes a while. Therefore to not slow down the rest 
     # of the script it is only imported once used.
     print ("Writing to tfrecords...")
@@ -1285,21 +1320,22 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
         
         for i in tqdm(range(n_wanted), desc="Writing TensorFlow record", unit=" MSA"):
             msa = dataset[i]
-            iconfigurations = msa.spec_ids
-            leaf_configuration = msa.coded_sequences
             label = msa.label
 
             # retrieve the wanted tfwriter for this MSA
-            s = np.digitize(i, split_bins)
+            # split_idx is the index of the split, m is the class label (model)
+            split_idx = np.digitize(i, split_bins)
             m = split_models.index(label) if label in split_models else 0 
-            tfwriter = tfwriters[s][m]
-            n_written[s][m] += 1
+            tfwriter = tfwriters[split_idx][m]
 
             # Write a coded MSA (either as sequence of nucleotides or codons) as an entry into a  Tensorflow-Records file.
             # in order to do so we need to setup the proper format for `tf.train.SequenceExample`
 
             # Use the correct onehot encoded sequences
+            msa.is_codon_aligned = no_codon_alignment # assumed to already be in codons
+
             coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
+
 
             # Infer the length of the sequences
             sequence_length = coded_sequences.shape[1]
@@ -1328,7 +1364,9 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
 
             if sitewise:
                 if len(label) != sequence_length:
-                    print("The list of labels is not suited for this sequence length")
+                    print(f"The length of the list of labels ({len(label)})",
+                          f"differs from the sequence length ({sequence_length}).",
+                          file=sys.stderr)
                     continue
                 # use the id of the clade and length of the sequences as context features
                 msa_context = tf.train.Features(feature = {
@@ -1354,6 +1392,7 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
                 # write the serialized example to the TFWriter
                 msa_serialized = msa_sequence_example.SerializeToString()
                 tfwriter.write(msa_serialized)
+                n_written[split_idx][m] += 1
             else:
                 # use label (`0` or `1`), the id of the clade and length of the sequences
                 # as context features
@@ -1380,16 +1419,8 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
                 # write the serialized example to the TFWriter
                 msa_serialized = msa_sequence_example.SerializeToString()
                 tfwriter.write(msa_serialized)
+                n_written[split_idx][m] += 1
 
-            #if verbose:
-            #    print(f"leaf_configuration[1,...]: {leaf_configuration.shape} {leaf_configuration[1,...]}")
-            #    ichar_test = np.random.randint(0, sequence_length)
-            #    print("ichar_test:", ichar_test)
-            #    print(f"Sample of the conversion:")
-            #    print(f"\tModel: {imodel}")
-            #    print(f"\tSequence Length: {sequence_length}")
-            #    print(f"\tConfiguration: {iconfigurations}")
-            #    print(f"\tPosition {ichar_test} character of the sequence: {leaf_configuration[:, ichar_test]}")
     
     print ("number of tf records written [rows: split bin s, column: model/label m]:\n", n_written)
 
