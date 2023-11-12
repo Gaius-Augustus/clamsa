@@ -95,14 +95,14 @@ def train_models(input_dir,
                 raise Exception(f"Invalid split specification for '{k}': {split_specifications[k]}") from te
 
     # fixed sequence length for ClaSS
-    fixed_sequence_length = model_hyperparameters["tcmc_class"]["num_positions"][0] if "tcmc_class" in model_hyperparameters else None
+    num_positions = model_hyperparameters["tcmc_class"]["num_positions"][0] if "tcmc_class" in model_hyperparameters else None
 
     # read the datasets for each wanted basename
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
 
     wanted_splits = [split for split in splits.values() if split != None ]
     unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, 
-                        fixed_sequence_length = fixed_sequence_length, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
+                        num_positions = num_positions, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
 
     if any(['train' not in unmerged_datasets[b] for b in basenames]):
         raise Exception("A 'train' split must be specified!")
@@ -298,8 +298,8 @@ def train_models(input_dir,
                     # CategoricalCrossentropy for the classification guesses and neg LL as a second loss
                     LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
                     loss = [tf.keras.losses.CategoricalCrossentropy(), LL_loss]
-                    loss_weights = [1.0, 1.0]
-                    metrics = None
+                    loss_weights = [1.0, .1]
+                    metrics = [[accuracy_metric, auroc_metric], None] # acc and auroc for guesses, none for negLL
                 else:
                     loss = tf.keras.losses.CategoricalCrossentropy()
                     loss_weights = None
@@ -361,12 +361,15 @@ def train_models(input_dir,
                         print("Evaluating the 'test' dataset:")
 
                     if model_name == 'tcmc_class':
-                        test_loss = model.evaluate(datasets['test'])
+                        test_loss, guesses_loss, negLL_loss, guesses_acc, guesses_auroc = model.evaluate(datasets['test'])
 
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
-                            tf.summary.scalar('loss', test_loss[0], step=1)
-                            tf.summary.scalar('categorical_crossentropy', test_loss[1], step=1)
-                            tf.summary.scalar('negative_loglikelihood', test_loss[2], step=1)
+                            tf.summary.scalar('accuracy', guesses_acc, step=1)
+                            tf.summary.scalar('auroc', guesses_auroc, step=1)
+                            tf.summary.scalar('loss', test_loss, step=1)
+                            tf.summary.scalar('categorical_crossentropy', guesses_loss, step=1)
+                            tf.summary.scalar('negative_loglikelihood', negLL_loss, step=1)
+
                     else:
                         test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
 
