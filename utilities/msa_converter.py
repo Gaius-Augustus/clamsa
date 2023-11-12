@@ -338,7 +338,8 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
             sequences = [str(rec.seq).lower() for rec in entries]
         else:
             sequences = [str(rec.seq) for rec in entries]
-        sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
+        if margin_width > 0:
+            sequences = [spec[margin_width:-margin_width] for spec in sequences]
 
         # decide whether the upcoming entry should be skipped
         skip_entry = model == 0 and random.random() > 1. / undersample_neg_by_factor
@@ -568,7 +569,8 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     else:
         sequences = [str(rec.seq) for rec in entries]
 
-    sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
+    if margin_width > 0:
+        sequences = [spec[margin_width:-margin_width] for spec in sequences]
 
     msa = MSA(
         model = None,
@@ -700,7 +702,8 @@ def import_phylocsf_training_file(paths, undersample_neg_by_factor = 1., referen
                     
                     # read the sequences and trim them if wanted
                     sequences = [str(rec.seq).lower() for rec in entries]
-                    sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
+                    if margin_width > 0:
+                        sequences = [spec[margin_width:-margin_width] for spec in sequences]
 
                     msa = MSA(
                             model = model,

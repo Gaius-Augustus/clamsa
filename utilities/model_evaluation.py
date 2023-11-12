@@ -188,7 +188,8 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
 
     # read the sequences and trim them if wanted
     sequences = [str(rec.seq).lower() for rec in entries]
-    sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
+    if margin_width > 0:
+        sequences = [spec[margin_width:-margin_width] for spec in sequences]
 
     msa = msa_converter.MSA(
         model = None,
