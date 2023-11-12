@@ -142,7 +142,12 @@ Use one of the following commands:
                 help = 'Whether the input MSAs are padded by a MARGIN_WIDTH necleotides on both sides.',
                 metavar = 'MARGIN_WIDTH',
                 type = int,
-                default = 0)        
+                default = 0)
+
+        parser.add_argument('--fixed_sequence_length',
+                help='Only sequences with SEQ_LEN number of nucleotides or amino acids will be regarded. Will be calculated after MARGIN_WIDTH was subtracted from sequence.',
+                metavar='SEQ_LEN',
+                type=int)
 
         parser.add_argument('--tuple_length', 
                 help = 'The MSAs will be exported as n-tupel-aligned sequences instead of nucleotide alignments where n is the tuple_length. This flag does not work with the INPUT_TYPE phylocsf and not in combination with the --use_codons flag!',
@@ -153,6 +158,11 @@ Use one of the following commands:
         parser.add_argument('--tuples_overlap',
                 help = 'The tuples will overlap tuple_length-1 characters. This flag only works in combination with --tuple_length > 1.',
                 action = 'store_true')
+
+        parser.add_argument('--num_positions',
+                help='Required sequence length (number of positions) of the onehot-encoded sequences. The encoded sequences will be padded / cut accordingly.',
+                metavar='NUM_POS',
+                type=int)
 
         parser.add_argument('--ratio_neg_to_pos',
                 help = 'Undersample the negative samples (Model ID 0) or positive examples (Model ID 1) of the input file(s) to achieve a ratio of RATIO negative per positive example.',
@@ -191,7 +201,7 @@ Use one of the following commands:
                 help = 'Factor for length subsampling probability of negatives. If > 1, the subsampling delivers more data but the negative length distribution fits not as closely that of the positives. Default=1.0', type=float, default=1.0)
 
         parser.add_argument('--min_sequence_length',
-                help = 'Minum length of alignment', type=int, default=1)
+                help = 'Minimum length of alignment when subsampling.', type=int, default=1)
 
         parser.add_argument('--verbose',
                 help = 'Whether some logging of the import and export should be performed.',
@@ -224,6 +234,7 @@ Use one of the following commands:
             T, species = mc.import_fasta_training_file(args.input_files,
                                                        reference_clades = args.clades,
                                                        margin_width = args.margin_width,
+                                                       fixed_sequence_length = args.fixed_sequence_length,
                                                        tuple_length = args.tuple_length,
                                                        tuples_overlap = args.tuples_overlap,
                                                        use_amino_acids = args.use_amino_acids,
@@ -233,6 +244,7 @@ Use one of the following commands:
             T, species = mc.import_augustus_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
+                                                          fixed_sequence_length = args.fixed_sequence_length,
                                                           tuple_length = args.tuple_length,
                                                           tuples_overlap = args.tuples_overlap,
                                                           use_codons = args.use_codons)
@@ -241,6 +253,7 @@ Use one of the following commands:
             T, species = mc.import_phylocsf_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
+                                                          fixed_sequence_length = args.fixed_sequence_length,
                                                           use_codons = args.use_codons)
 
         # harmonize the length distributions if requested
@@ -282,6 +295,7 @@ Use one of the following commands:
                         args.basename,
                         species,
                         splits, split_models, split_bins, n_wanted,
+                        num_positions = args.num_positions,
                         use_compression = args.use_compression,
                         verbose = args.verbose)
 
@@ -511,7 +525,7 @@ Use one of the following commands:
                             action = 'store_true',
         )
 
-        
+
         parser.add_argument('--batch_size',
                             help='Number of MSAs to evaluate per computation step.\nHigher batch sizes increase the speed of evaluation, though require more RAM / VRAM in the case of CPU / GPU evaluation.',
                             metavar='BATCH_SIZE',
