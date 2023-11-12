@@ -258,24 +258,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     # import the fasta files and filter out empty codon aligned sequences
     path_ids_without_reference_clade = set()
     path_ids_with_empty_sequences = set()
-    
-    def sequence_generator():
-
-        for f in fasta_paths:
-            if f == "":
-                path_ids_with_empty_sequences.add(f)
-                continue
-            # filter fasta files that have no valid reference clade
-            cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict = trans_dict, remove_stop_rows = remove_stop_rows, use_amino_acids = use_amino_acids, 
-                                                        tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons)
-            if cid == -1:
-                path_ids_without_reference_clade.add(f)
-                continue
-            if cid == -2:
-                path_ids_with_empty_sequences.add(f)
-                continue
-
-            yield cid, sl, S
+    path_ids_with_unusable_sequences = set()
 
     
     # load the wanted models and compile them
@@ -284,6 +267,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
     loss = tf.keras.losses.CategoricalCrossentropy()
     optimizer = tf.keras.optimizers.Adam(0.0005)
+    num_positions = None  
 
     for n in models:
         if n == "tcmc_class":
@@ -291,7 +275,8 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
             models[n].compile(optimizer = optimizer,
                               loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
                               loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
-                              metrics = None)
+                              metrics = [[accuracy_metric, auroc_metric], None])
+            num_positions = models[n].get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
         else:
             models[n].compile(optimizer = optimizer,
                               loss = loss,
@@ -301,6 +286,27 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         # evo_layer.export_matrices("rates-Q.txt", "rates-pi.txt")
         # D = models[n].get_layer(index=5)
         # print (D.get_weights())
+        
+    def sequence_generator():
+
+        for f in fasta_paths:
+            if f == "":
+                path_ids_with_empty_sequences.add(f)
+                continue
+            # filter fasta files that have no valid reference clade
+            cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict = trans_dict, remove_stop_rows = remove_stop_rows, use_amino_acids = use_amino_acids, 
+                                                        tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons, num_positions = num_positions)
+            if cid == -1:
+                path_ids_without_reference_clade.add(f)
+                continue
+            if cid == -2:
+                path_ids_with_empty_sequences.add(f)
+                continue
+            if cid == -3:
+                path_ids_with_unusable_sequences.add(f)
+                continue
+
+            yield cid, sl, S
 
     # construct a `tf.data.Dataset` from the fasta files    
     # generate a dataset for these files
@@ -339,7 +345,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
             pass # happens in tf 2.3 when there is no valid MSA
         del model
 
-    wellformed_msas = [f for f in fasta_paths if f not in path_ids_with_empty_sequences and f not in path_ids_without_reference_clade]
+    wellformed_msas = [f for f in fasta_paths if f not in path_ids_with_empty_sequences and f not in path_ids_without_reference_clade and f not in path_ids_with_unusable_sequences]
     preds['path'] = wellformed_msas
     preds.move_to_end('path', last = False) # move MSA file name to front
     
@@ -348,7 +354,10 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         
     for p in path_ids_with_empty_sequences:
         print(f'The MSA "{p}" is empty (after) codon-aligning it. Ignoring it.')
-    
+
+    for p in path_ids_with_unusable_sequences:
+        print(f'The MSA "{p}" is not usable. Ignoring it.')
+
     return preds
 
 
@@ -362,7 +371,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
                               use_amino_acids = False,
                               use_codons = False,
                               tuple_length = 1,
-                              tuples_overlap = False,  # isnt needed rn
+                              tuples_overlap = False, # not needed rn
                               batch_size = 30,
                               num_classes = 2
 ):
@@ -373,14 +382,13 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     num_leaves = database_reader.num_leaves(clades)
     buffer_size = 1000
     
-    
-    
     # load the wanted models and compile them
     models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
     accuracy_metric = 'accuracy'
     auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
     loss = tf.keras.losses.CategoricalCrossentropy()
     optimizer = tf.keras.optimizers.Adam(0.0005)
+    num_positions = None
 
     for n in models:
         if n == "tcmc_class":
@@ -388,7 +396,8 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
             models[n].compile(optimizer = optimizer,
                               loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
                               loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
-                              metrics = None)
+                              metrics = [[accuracy_metric, auroc_metric], None])
+            num_positions = models[n].get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
         else:
             models[n].compile(optimizer = optimizer,
                               loss = loss,
@@ -411,6 +420,8 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     for p in tfrecord_paths:
         
         dataset = datasets[p]
+        if num_positions:
+            dataset = dataset.filter(lambda model, clade_id, sequence_length, sequence_onehot: sequence_length == num_positions)
         dataset = dataset.padded_batch(batch_size, 
                                        padded_shapes = padded_shapes, 
                                        padding_values = (
