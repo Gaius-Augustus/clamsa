@@ -169,6 +169,12 @@ Use one of the following commands:
                 metavar = 'RATIO',
                 type = float)
 
+        parser.add_argument('--undersample_neg_by_factor',
+                help = 'Take any negative sample (Model ID 0) only with probability 1 / FACTOR, set to 1.0 (default) to use all negative examples. Can be used in conjunction with --ratio_neg_to_pos or alone.',
+                metavar = 'FACTOR',
+                type = float,
+                default = 1.0)
+
         parser.add_argument('--use_codons', 
                 help = 'The MSAs will be exported as codon-aligned codon sequences instead of nucleotide alignments.',
                 action = 'store_true')
@@ -232,6 +238,7 @@ Use one of the following commands:
             
         if args.in_type == 'fasta':
             T, species = mc.import_fasta_training_file(args.input_files,
+                                                       undersample_neg_by_factor = args.undersample_neg_by_factor,
                                                        reference_clades = args.clades,
                                                        margin_width = args.margin_width,
                                                        fixed_sequence_length = args.fixed_sequence_length,
@@ -242,6 +249,7 @@ Use one of the following commands:
 
         if args.in_type == 'augustus':
             T, species = mc.import_augustus_training_file(args.input_files,
+                                                          undersample_neg_by_factor = args.undersample_neg_by_factor,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
                                                           fixed_sequence_length = args.fixed_sequence_length,
@@ -251,6 +259,7 @@ Use one of the following commands:
 
         if args.in_type == 'phylocsf':
             T, species = mc.import_phylocsf_training_file(args.input_files,
+                                                          undersample_neg_by_factor = args.undersample_neg_by_factor,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
                                                           fixed_sequence_length = args.fixed_sequence_length,
