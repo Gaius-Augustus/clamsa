@@ -33,7 +33,7 @@ def create_model(forest,
 
     # define the layers
     encoding_layer = Encode(new_alphabet_size, name='encoded_sequences', dtype=tf.float64) if new_alphabet_size > 0 else None
-    tcmc_layer = TCMCProbability((tcmc_models,), forest, sparse_rates = sparse_rates, name="P_sequence_columns")
+    tcmc_layer = TCMCProbability((tcmc_models,), forest, sparse_rates = sparse_rates, normalize_expected_mutations=False, name="P_sequence_columns")
     log_layer = tf.keras.layers.Lambda(tf.math.log, name="log_P", dtype=tf.float64)
     norm_layer = normalize_by_depth(name = "normalize", dtype=tf.float64)
     
@@ -46,11 +46,9 @@ def create_model(forest,
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
     P = tcmc_layer(Encoded_sequences, clade_ids)
     log_P = log_layer(P)
-    norm_log_P = norm_layer(sequences, log_P)
-    dense1 = dense_layer1(norm_log_P)
+    dense1 = dense_layer1(log_P)
     dense2 = dense_layer2(dense1)
     guesses = guesses_layer(dense2)
-    
 
     model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = guesses, name = name)
     
