@@ -339,7 +339,7 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
         else:
             sequences = [str(rec.seq) for rec in entries]
         if margin_width > 0:
-            sequences = [spec[margin_width:-margin_width] for spec in sequences]
+            sequences = [row[margin_width:-margin_width] for row in sequences]
 
         # decide whether the upcoming entry should be skipped
         skip_entry = model == 0 and random.random() > 1. / undersample_neg_by_factor
