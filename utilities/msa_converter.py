@@ -570,7 +570,7 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
         sequences = [str(rec.seq) for rec in entries]
 
     if margin_width > 0:
-        sequences = [spec[margin_width:-margin_width] for spec in sequences]
+        sequences = [row[margin_width:-margin_width] for row in sequences]
 
     msa = MSA(
         model = None,
