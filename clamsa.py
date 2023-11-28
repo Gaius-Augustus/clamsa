@@ -501,13 +501,13 @@ Use one of the following commands:
         parser.add_argument('in_type',
                 choices=['fasta', 'tfrecord'],
                 metavar='INPUT_TYPE',
-                help='Specif the input file type. Supported are: {fasta, tfrecord}',
+                help='Specif the input file type. Supported are: {fasta, tfrecord, maf}',
         )
         
 
         parser.add_argument('input', 
                             metavar='INPUT',
-                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.',
+                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.\nIf INPUT_TYPE == maf: A (gzipped) MAF file. A .wig file with coding probabilities of codons in all six-frames is output. Requires --sitewise option',
                             type=file_exists,
                             nargs='+',
         )
@@ -617,12 +617,11 @@ dm3.chr1 dmel''',
         # default the log_dir to the saved_weights_dir
         if args.log_basedir is None:
             args.log_basedir = args.saved_weights_basedir
-            
+
+        # import on demand (importing tf is costly)
+        import utilities.model_evaluation as me
+
         if args.in_type == 'fasta':
-
-            #import on demand (importing tf is costly)
-            import utilities.model_evaluation as me
-
             # import the list of fasta file paths
             fasta_paths = []
             for fl in args.input:
@@ -662,13 +661,10 @@ dm3.chr1 dmel''',
                                               classify = args.classify
             )
 
-        if args.in_type == 'tfrecord':
+        elif args.in_type == 'tfrecord':
             if args.sitewise:
-                print("Sitewise prediction currently only works on fasta files")
+                print("Sitewise prediction currently does not work on tfrecord files")
                 return
-            
-            #import on demand (importing tf is costly)
-            import utilities.model_evaluation as me
             
             preds = me.predict_on_tfrecord_files(trial_ids=args.model_ids,
                                                  saved_weights_dir=args.saved_weights_basedir,
@@ -681,21 +677,39 @@ dm3.chr1 dmel''',
                                                  batch_size = args.batch_size,
                                                  num_classes = args.num_classes
             )
-            
-        
+        elif args.in_type == 'maf' or args.in_type == 'MAF':
+            preds = me.predict_on_maf_files(trial_ids = OrderedDict(args.model_ids),
+                                              saved_weights_dir = args.saved_weights_basedir,
+                                              log_dir = args.log_basedir,
+                                              clades = args.clades,
+                                              path = args.input,
+                                              use_codons = args.use_codons,
+                                              tuple_length = args.tuple_length,
+                                              batch_size = args.batch_size,
+                                              trans_dict = trans_dict,
+                                              remove_stop_rows = args.remove_stop_rows
+            )
+        else:
+            raise Exception(f"Unsupported input type: {args.in_type}")
+
+        # determine output format and output the preds
         if args.sitewise:
-            # write dictionary to file
-            # for a classification task: probabilitys of both classes are output in succession
-            if args.out_csv is None:
-                print(preds, end = "")
-            else:
-                with open (args.out_csv, mode = 'w') as f:
-                    for path, values in preds.items():
-                        f.write('%s:%s\n' % (path, values))
-            
-            pickle_file = open("clamsa_out.pkl", "wb")
-            pickle.dump(preds, pickle_file)
-            pickle_file.close()
+            if args.in_type == 'fasta':
+                # write dictionary to file
+                # for a classification task: probabilitys of both classes are output in succession
+                if args.out_csv is None:
+                    print(preds, end = "")
+                else:
+                    with open (args.out_csv, mode = 'w') as f:
+                        for path, values in preds.items():
+                            f.write('%s:%s\n' % (path, values))
+                
+                pickle_file = open("clamsa_out.pkl", "wb")
+                pickle.dump(preds, pickle_file)
+                pickle_file.close()
+            elif args.in_type == 'maf':
+                # write wig file
+                print (preds) # TODO
             
         else:
             # construct a dataframe from the predictions

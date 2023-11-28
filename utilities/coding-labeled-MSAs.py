@@ -236,10 +236,6 @@ if __name__ == '__main__':
 
     outf = out_opener(args.outmsa, "wt")
 
-
-    def f(a,b):
-        print ("f:", a, b)
-
     try:
         with opener(args.inmsa, "rt") as msas_file:
             lock = Lock()

@@ -15,6 +15,7 @@ import newick
 from collections import Counter
 import itertools
 import json
+import pathlib
 import zipfile
 import io
 import matplotlib.pyplot as plt
@@ -561,6 +562,14 @@ def import_augustus_training_file(paths, undersample_neg_by_factor = 1., alphabe
     return training_data, species
 
 
+def extract_MSA_from_fasta_file(fasta_path : str):
+    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
+        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
+    return 
+
+def string_MSA_to_numpy():
+    return
+
 # TODO: This logic resides inside `import_fasta` and `import_phylocsf`
 # Unify the logic and use this function inside the upper functions
 #
@@ -570,7 +579,7 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
-
+    print ("parse_fasta_file called on ", fasta_path)
     tuple_length = 3 if use_codons else tuple_length
 
     trans_dict = {} if trans_dict is None else trans_dict
@@ -590,6 +599,10 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
   
     # compare them with the given references
     ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i] ] for s in msa_taxon_ids]
+    print ("species:", species)
+    print ("spec_in_file:", spec_in_file)
+    print ("ref_ids:", ref_ids)
+
 
     # check if these are contained in exactly one reference clade
     n_refs = [len(x) for x in ref_ids]
@@ -1550,3 +1563,30 @@ def write_phylocsf(dataset, out_dir, basename, species,
         fa.close()
     print ("number of PhyloCSF records written [rows: split bin s, column: model/label m]:\n", n_written)
 
+def maf_generator(mafpath : str):
+    """ Generator for MAF files. 
+        It generates multiple sequence alignments
+    """
+    try:
+        from Bio import AlignIO # to read MAF files
+        from Bio.Align import MultipleSeqAlignment
+    except ImportError:
+        print("Please install Biopython to use the MAF format.")
+        sys.exit(1)
+    
+    opener = open # for regular text files
+    if '.gz' in pathlib.Path(mafpath).suffixes:
+        opener = gzip.open
+    
+    try:
+        with opener(mafpath, "rt") as msas_file:
+            msa = None
+            for msa in AlignIO.parse(msas_file, "maf"):
+                yield msa
+            if msa is None:
+                print("Error: no MSA found in file %s" % mafpath)
+                sys.exit(1)
+                        
+    except OSError:
+        print ("Error: cannot open file %s" % mafpath)
+        sys.exit(1)
