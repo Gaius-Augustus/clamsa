@@ -275,7 +275,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
             if cid == -2:
                 path_ids_with_empty_sequences.add(f)
                 continue
-            
+
             yield cid, sl, S
 
     
@@ -318,7 +318,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
 
     # predict on each model
     preds = collections.OrderedDict()
-        
+
     for n in models:
         model = models[n]
         try:
