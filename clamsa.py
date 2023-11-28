@@ -9,6 +9,8 @@ import numbers
 import newick
 from pathlib import Path
 import pandas as pd
+from Bio import SeqIO
+import pickle
 from collections import OrderedDict
 import warnings
 import utilities.msa_converter as mc
@@ -196,26 +198,47 @@ Use one of the following commands:
                 help = 'Whether the dataset should be divided into multiple chunks depending on the models of the sequences. By default no split is performed. Say one wants to split models 0 and 1 then one may achive this by "--split_models 0 1".',
                 type = int,
                 nargs = '+')
+        
+        parser.add_argument('--sitewise',
+                help = 'Whether the dataset is for training a sitewise (=columnwise) model, one label for each site is expected (currently only supports fasta as input).',
+                action = 'store_true')
+        
+        parser.add_argument('--subsample_small_omega',
+                help = 'Undersample examples with small dNdS to achieve the desired OMEGA_RATIO of omegas >= s to omega < s (default: s = 1.0)',
+                metavar = 'OMEGA_RATIO',
+                type = float)
+        
+        parser.add_argument('--subsample_separator',
+                help = 'Value s for separating small from large omegas (default: 1.0)',
+                metavar = 'SEPARATOR',
+                type = float,
+                default=1.0)
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
         if args.basename == None:
             args.basename = '_'.join(Path(p).stem for p in args.input_files)
-            
+
+        if args.sitewise and args.in_type != 'fasta':
+            print("Datasets for the sitewise model are currently only supported in fasta format")
+            return
+
         if args.in_type == 'fasta':
             T, species = mc.import_fasta_training_file(args.input_files,
                                                        reference_clades = args.clades,
                                                        margin_width = args.margin_width,
                                                        tuple_length = args.tuple_length,
                                                        use_amino_acids = args.use_amino_acids,
-                                                       use_codons = args.use_codons)
+                                                       use_codons = args.use_codons,
+                                                       sitewise = args.sitewise)
 
         if args.in_type == 'augustus':
             T, species = mc.import_augustus_training_file(args.input_files,
                                                           reference_clades = args.clades,
                                                           margin_width = args.margin_width,
                                                           use_codons = args.use_codons)
+                                                          
 
         if args.in_type == 'phylocsf':
             T, species = mc.import_phylocsf_training_file(args.input_files,
@@ -225,21 +248,39 @@ Use one of the following commands:
 
         # harmonize the length distributions if requested
         if args.subsample_lengths:
+            if args.sitewise:
+                print("Unsupported option: subsample_lengths - for sitewise training data")
+                return
+            
             T = mc.subsample_lengths(T, min_sequence_length = args.min_sequence_length, relax=args.subsample_lengths_relax)
 
         if args.subsample_depths_lengths:
+            if args.sitewise:
+                print("Unsupported option: subsample_depths_lengths - for sitewise training data")
+                return
+            
             T = mc.subsample_depths_lengths(T, min_sequence_length = args.min_sequence_length,
                                             relax=args.subsample_lengths_relax,
                                             pos_over_neg_mod=6.0) # favor less abundant positive examples
 
         # achieve the requested ratio of negatives to positives
         if args.ratio_neg_to_pos:
+            if args.sitewise:
+                print("Unsupported option: ratio_neg_to_pos - for sitewise training data (maybe use subsample_small_omegas)")
+                return
+            
             T = mc.subsample_labels(T, args.ratio_neg_to_pos)
             if args.subsample_depths_lengths:
                 print ("Creating histogram")
                 mc.plot_depth_length_scatter(T, id = "sub-subsampled")
                 mc.plot_lenhist(T, id = "sub-subsampled")
-
+        
+        # achieve the requested ratio of omegas >= s to omegas < s
+        if args.subsample_small_omega:
+            T = mc.subsample_omegas(T, args.subsample_small_omega, args.subsample_separator)
+        
+        
+        
         print ("Number of filtered alignments available to be written: ", len(T))
         
         if len(T) > 0:
@@ -263,6 +304,7 @@ Use one of the following commands:
                         species,
                         splits, split_models, split_bins, n_wanted,
                         use_compression = args.use_compression,
+                        sitewise = args.sitewise,
                         verbose = args.verbose)
 
                 print(f'The datasets have sucessfully been saved in tfrecord files.')
@@ -394,6 +436,17 @@ Use one of the following commands:
                             type = folder_is_writable_if_exists,
         )
         
+        parser.add_argument('--sitewise',
+                            help = 'Whether the training is for estimating sitewise values (uses different datasets for training)',
+                            action = 'store_true')
+        
+        parser.add_argument('--sample_weights',
+                            help = 'Whether sample weights should be used for training (currently creates weights 0.05, 1.0, 3.5 for dNdS values omega <= 0.8, 0.8 < omega < 1.2, 1.2 <= omega) ',
+                            action = 'store_true')
+        
+        parser.add_argument('--classify',
+                            help = 'Whether the training is for classification of sitewise classes (tcmc_dNdS_class). If sitewise but classify is not specified, a regression model is expected (tcmc_dNdS).',
+                            action = 'store_true')
                 
         parser.add_argument('--verbose', 
                             help = 'Whether training information should be printed to console.',
@@ -426,6 +479,9 @@ Use one of the following commands:
                      True, # args.save_model_weights,
                      args.log_basedir,
                      args.saved_weights_basedir,
+                     args.sitewise,
+                     args.classify,
+                     args.sample_weights,
                      args.verbose,
         )
         
@@ -535,6 +591,15 @@ dm3.chr1 dmel''',
                             type=int,
                             default=2,
         )
+        
+        parser.add_argument('--sitewise',
+                            help='Predict sitewise values (needs a trained sitewise model). Currently only works on fasta files',
+                            action='store_true',
+        )
+        parser.add_argument('--classify',
+                            help='Predict sitewise classes (needs a trained sitewise classification model). Currently only works on fasta files',
+                            action='store_true',
+        )
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
@@ -587,10 +652,15 @@ dm3.chr1 dmel''',
                                               batch_size = args.batch_size,
                                               trans_dict = trans_dict,
                                               remove_stop_rows = args.remove_stop_rows,
-                                              num_classes = args.num_classes
+                                              num_classes = args.num_classes,
+                                              sitewise = args.sitewise,
+                                              classify = args.classify
             )
 
         if args.in_type == 'tfrecord':
+            if args.sitewise:
+                print("Sitewise prediction currently only works on fasta files")
+                return
             
             #import on demand (importing tf is costly)
             import utilities.model_evaluation as me
@@ -606,26 +676,41 @@ dm3.chr1 dmel''',
                                                  batch_size = args.batch_size,
                                                  num_classes = args.num_classes
             )
-
-        # construct a dataframe from the predictions
-        df = pd.DataFrame.from_dict(preds)
-
-
-        from io import StringIO
-        output = StringIO()
-
-        df.to_csv(output, sep='\t',
-                  float_format = '%.4f', # output precision
-                  index = False,
-                  header = True,
-                  mode = 'w' )
-        outputstr = output.getvalue()
-
-        if args.out_csv is None:
-            print(outputstr, end = "")
+            
+        
+        if args.sitewise:
+            # write dictionary to file
+            # for a classification task: probabilitys of both classes are output in succession
+            if args.out_csv is None:
+                print(preds, end = "")
+            else:
+                with open (args.out_csv, mode = 'w') as f:
+                    for path, values in preds.items():
+                        f.write('%s:%s\n' % (path, values))
+            
+            pickle_file = open("clamsa_out.pkl", "wb")
+            pickle.dump(preds, pickle_file)
+            pickle_file.close()
+            
         else:
-            with open(args.out_csv, mode='w') as f:
-                print(outputstr , end = "", file = f)
+            # construct a dataframe from the predictions
+            df = pd.DataFrame.from_dict(preds)
+    
+            from io import StringIO
+            output = StringIO()
+    
+            df.to_csv(output, sep='\t',
+                      float_format = '%.4f', # output precision
+                      index = False,
+                      header = True,
+                      mode = 'w' )
+            outputstr = output.getvalue()
+    
+            if args.out_csv is None:
+                print(outputstr, end = "")
+            else:
+                with open(args.out_csv, mode='w') as f:
+                    print(outputstr , end = "", file = f)
 
 
 def main():

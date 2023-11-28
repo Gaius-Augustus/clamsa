@@ -188,11 +188,12 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
 
     # read the sequences and trim them if wanted
     sequences = [str(rec.seq).lower() for rec in entries]
+
     if margin_width > 0:
         sequences = [row[margin_width:-margin_width] for row in sequences]
 
     msa = msa_converter.MSA(
-        model = None,
+        label = None,
         chromosome_id = None, 
         start_index = None,
         end_index = None,
@@ -207,7 +208,6 @@ def parse_fasta_file(fasta_path, clades, margin_width=0):
     
     # Infer the length of the sequences
     sequence_length = len(coded_sequences[1])  
-    
     if sequence_length == 0:
         return None
 
@@ -246,7 +246,9 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            batch_size = 30,
                            trans_dict = None,
                            remove_stop_rows = False,
-                           num_classes = 2
+                           num_classes = 2,
+                           sitewise = False,
+                           classify = False
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -322,12 +324,15 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         model = models[n]
         try:
             pred = model.predict(dataset)
-            if num_classes > 2:
-                for c in range(num_classes):
-                    n_c = n + "_class_" + str(c)
-                    preds[n_c] = pred[:, c]
+            if sitewise:
+                preds[n] = pred.flatten()
             else:
-                preds[n] = pred[:, 1]
+                if num_classes > 2:
+                    for c in range(num_classes):
+                        n_c = n + "_class_" + str(c)
+                        preds[n_c] = pred[:, c]
+                else:
+                    preds[n] = pred[:, 1]
         except UnboundLocalError:
             pass # happens in tf 2.3 when there is no valid MSA
         del model
@@ -341,8 +346,33 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         
     for p in path_ids_with_empty_sequences:
         print(f'The MSA "{p}" is empty (after) codon-aligning it. Ignoring it.')
-    
-    return preds
+        
+    if sitewise:
+        final_preds = {}
+        
+        for path in preds['path']:
+            prev_seq_len = -1
+            records = SeqIO.parse(path, "fasta")
+            
+            for record in records:
+                seq_len = int(len(record.seq)/3)
+                if classify:
+                    # 2 outputs per site for 2 classes
+                    seq_len = 2*seq_len
+                #check if the sequence lengths in one file are different
+                if seq_len != prev_seq_len and prev_seq_len != -1:
+                    print("All sequences in one MSA should have the same length! Values could possibly be not correctly assigned to the MSA")
+                prev_seq_len = seq_len
+
+            # divide the predictions into parts corresponding to the right sequence 
+            # (currently only works for 1 model)
+            for n in models:
+                final_preds[path] = preds[n][:seq_len]
+                preds[n] = preds[n][seq_len:]
+                
+        return final_preds
+    else:
+        return preds
 
 
 
@@ -434,8 +464,8 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         aligned_sequences = tf.reduce_any(nontrivial_entries_batched, axis=1)
         aligned_sequences = tf.reduce_sum(tf.cast(aligned_sequences, dtype=tf.int64), axis=-1)
 
-        model = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
-        return (aligned_sequences, sequence_lengths, model)
+        label = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
+        return (aligned_sequences, sequence_lengths, label)
 
 
     # predict on each model
