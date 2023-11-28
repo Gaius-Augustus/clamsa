@@ -703,7 +703,7 @@ def import_phylocsf_training_file(paths, undersample_neg_by_factor = 1., referen
                     # read the sequences and trim them if wanted
                     sequences = [str(rec.seq).lower() for rec in entries]
                     if margin_width > 0:
-                        sequences = [spec[margin_width:-margin_width] for spec in sequences]
+                        sequences = [row[margin_width:-margin_width] for row in sequences]
 
                     msa = MSA(
                             model = model,
