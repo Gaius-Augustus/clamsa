@@ -526,10 +526,22 @@ def import_augustus_training_file(paths, undersample_neg_by_factor = 1., alphabe
     return training_data, species
 
 
-# TODO: This logic resides inside `import_fasta` and `import_phylocsf`
-# Unify the logic and use this function inside the upper functions
+def get_fasta_seqs(fasta_path : str):
+    """ Returns the sequences in a fasta file.
+    @param fasta_path: Path to the fasta file with one MSA
+    @return List[str]: Sequences (= rows of MSA) in the fasta file
+            List[str]: Species names for each row
+    """
+    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:
+        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
+
+    # parse the species names
+        spec_in_file = [e.id.split('|')[0] for e in entries]
+    return spec_in_file
+
+# Part of this logic also resides inside `import_fasta` and `import_phylocsf`
 #
-# This function is currently just written for the fasta header format
+# This function is currently just written for the particular fasta header format
 # we generate for phylocsf.
 def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_dict=None, remove_stop_rows=False, use_amino_acids = False, tuple_length = 1):
     """
@@ -544,10 +556,7 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     else:
         species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
 
-    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
-        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
-    # parse the species names
-    spec_in_file = [e.id.split('|')[0] for e in entries]
+    spec_in_file = get_fasta_seqs(fasta_path)
 
     # translate species name from file to taxon ids
     translator = lambda s : trans_dict[s] if s in trans_dict else s
