@@ -2,7 +2,7 @@
 """
 Created on Thu Dec  8 12:17:31 2022
 
-@author: dmeissner
+@author: Daniel Meissner
 """
 
 import sys
