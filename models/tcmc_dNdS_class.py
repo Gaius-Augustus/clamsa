@@ -2,7 +2,7 @@
 """
 Created on Wed Jul 26 11:38:18 2023
 
-@author: dmeissner
+@author: Daniel Meissner
 """
 
 import sys
@@ -61,16 +61,6 @@ def create_model(forest,
 def training_callbacks(model, logdir, wanted_callbacks):
     
     return []
-    
-    tcmc = model.get_layer("P_sequence_columns")
-    
-    file_writer = tf.summary.create_file_writer(f'{logdir}/images/aa')
-    
-    log_aa = partial(log_amino_acid_probability_distribution, tcmc=tcmc, file_writer=file_writer, model_id=0, t=0)
-    
-    aa_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=log_aa)
-    
-    return [aa_callback]
 
 
 
