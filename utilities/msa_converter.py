@@ -527,10 +527,44 @@ def import_augustus_training_file(paths, undersample_neg_by_factor = 1., alphabe
     return training_data, species
 
 
-# TODO: This logic resides inside `import_fasta` and `import_phylocsf`
-# Unify the logic and use this function inside the upper functions
+def get_fasta_seqs(fasta_path : str, use_amino_acids, margin_width = 0):
+    """ Returns the sequences in a fasta file.
+    @param fasta_path: Path to the fasta file with one MSA
+    @return List[str]: Sequences (= rows of MSA) in the fasta file
+            List[str]: Species names for each row
+    """
+    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:
+        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
+
+    # extract the sequences and trim them if wanted
+    sequences = []
+    for rec in entries:
+        rowstr = str(rec.seq)
+        if not use_amino_acids:
+            rowstr = rowstr.lower() # to a,c,g,t alphabet
+        if margin_width > 0:
+            rowstr = rowstr[margin_width:-margin_width]
+        sequences.append(rowstr)
+
+    # parse the species names
+    spec_in_file = [e.id.split('|')[0] for e in entries]
+
+    # the first entry of the fasta file has the header informations
+    header_fields = entries[0].id.split("|")
+    # allow noninformative fasta headers as well
+    frame = 0
+    if len(header_fields) > 2:
+        try:
+            frame =  int(header_fields[2][-1])
+        except ValueError:
+            pass # leave frame at 0 by default
+    plus_strand = True if len(header_fields) < 5 or header_fields[4] != 'revcomp' else False
+
+    return sequences, spec_in_file, frame, plus_strand
+
+# Part of this logic also resides inside `import_fasta` and `import_phylocsf`
 #
-# This function is currently just written for the fasta header format
+# This function is currently just written for the particular fasta header format
 # we generate for phylocsf.
 def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_dict=None, remove_stop_rows=False, use_amino_acids = False, tuple_length = 1):
     """
@@ -545,10 +579,8 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     else:
         species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
 
-    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
-        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
-    # parse the species names
-    spec_in_file = [e.id.split('|')[0] for e in entries]
+    sequences, spec_in_file, frame, plus_strand \
+        = get_fasta_seqs(fasta_path, use_amino_acids, margin_width)
 
     # translate species name from file to taxon ids
     translator = lambda s : trans_dict[s] if s in trans_dict else s
@@ -568,31 +600,12 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     if len(set(r for (r,i) in ref_ids)) > 1:
         return -1, 0, None
 
-    # the first entry of the fasta file has the header informations
-    header_fields = entries[0].id.split("|")
-    # allow noninformative fasta headers as well
-    frame = 0
-    if len(header_fields) > 2:
-        try:
-            frame =  int(header_fields[2][-1])
-        except ValueError:
-            pass # leave frame at 0 by default
-
-    # read the sequences and trim them if wanted
-    if not use_amino_acids:
-        sequences = [str(rec.seq).lower() for rec in entries]
-    else:
-        sequences = [str(rec.seq) for rec in entries]
-
-    if margin_width > 0:
-        sequences = [row[margin_width:-margin_width] for row in sequences]
-
     msa = MSA(
         label = None,
         chromosome_id = None, 
         start_index = None,
         end_index = None,
-        is_on_plus_strand = True if len(header_fields) < 5 or header_fields[4] != 'revcomp' else False,
+        is_on_plus_strand = plus_strand,
         frame = frame,
         spec_ids = ref_ids,
         offsets = [],
