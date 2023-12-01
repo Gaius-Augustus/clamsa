@@ -1271,7 +1271,8 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
         n_written = np.zeros([len(splits), len(split_models)])
         
         for i in tqdm(range(n_wanted), desc="Writing TensorFlow record", unit=" MSA"):
-            msa = dataset[i]
+            msa = dataset[0]
+            del dataset[0]
             iconfigurations = msa.spec_ids
             #leaf_configuration = msa.coded_sequences
             model = msa.model
