@@ -55,7 +55,7 @@ def read_gff(gff_file, strand = "both"):
 def process_MSA(msa, refspecies, sample_freq_nongenic, minlen):
     """
     Process a single MSA. Use the global forest variable to determine which codon sites are coding.
-    Output 6 new site-labelled MSAs in FASTA format, one for each frame and strand.
+    Output 6 new site-labeled MSAs in FASTA format, one for each frame and strand.
     TODO: remove gap-only columns from msa
     """
     refseqrec = None
@@ -84,13 +84,12 @@ def process_MSA(msa, refspecies, sample_freq_nongenic, minlen):
     sixMSAs = []
     pos_sites = sites = 0
     if ovlpCDS or np.random.random() < sample_freq_nongenic:
-        sixMSAs, pos_sites, sites = six_frame_loop(msa, refrow, refchrStart,
-                                                    refchrEnd, ovlpCDS, minlen)
+        sixMSAs, pos_sites, sites = six_frame_loop(msa, refrow, refchrStart, ovlpCDS, minlen)
 
     return sixMSAs, pos_sites, sites
 
 def six_frame_loop(msa:MultipleSeqAlignment, refrow:str,
-                   refchrStart:int, refchrEnd:int, ovlpCDS:list[Interval], minlen=7):
+                   refchrStart:int, ovlpCDS:list[Interval], minlen=7):
     """
     Loop over the 6 frames of the reference sequence and find the classes of codon sites
     """

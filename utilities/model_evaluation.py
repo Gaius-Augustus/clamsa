@@ -4,8 +4,9 @@ from tensorboard.plugins.hparams import plugin_data_pb2
 from protobuf_to_dict import protobuf_to_dict
 from importlib import import_module
 from pathlib import Path
+import pathlib
 import inspect
-from Bio import SeqIO
+from Bio import SeqIO, AlignIO
 import numpy as np
 import collections
 from functools import partial
@@ -159,7 +160,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            saved_weights_dir,
                            log_dir,
                            clades,
-                           fasta_paths,
+                           input_files, # list of files, each with a with a list of fasta file paths
                            use_amino_acids = False,
                            use_codons = False,
                            tuple_length = 1,
@@ -168,8 +169,14 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            remove_stop_rows = False,
                            num_classes = 2,
                            sitewise = False,
-                           classify = False
-):
+                           classify = False):
+    # import the list of fasta file paths
+    fasta_paths = []
+
+    for fl in input_files:
+        with open(fl) as f:
+            fasta_paths.extend(f.read().splitlines())
+
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
     alphabet_size = 4 ** tuple_length if not use_amino_acids else 20 ** tuple_length
@@ -180,25 +187,28 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     # import the fasta files and filter out empty codon aligned sequences
     path_ids_without_reference_clade = set()
     path_ids_with_empty_sequences = set()
-    
+    aux = []
     def sequence_generator():
         for f in fasta_paths:
             if f == "":
                 path_ids_with_empty_sequences.add(f)
                 continue
             # filter fasta files that have no valid reference clade
-            cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict=trans_dict, 
+            tensor_msas = msa_converter.parse_text_MSA(f, clades, trans_dict=trans_dict, 
                                                         remove_stop_rows=remove_stop_rows, 
                                                         use_amino_acids = use_amino_acids, tuple_length = tuple_length,
                                                         use_codons = use_codons)
-            if cid == -1:
-                path_ids_without_reference_clade.add(f)
-                continue
-            if cid == -2:
-                path_ids_with_empty_sequences.add(f)
-                continue
-
-            yield cid, sl, S
+            for (cid, sl, S, auxdata) in tensor_msas: 
+                if cid == -1:
+                    path_ids_without_reference_clade.add(f)
+                    continue
+                if cid == -2:
+                    path_ids_with_empty_sequences.add(f)
+                    continue
+                # store auxiliary data in parallel list for results reporting
+                aux.append(auxdata)
+                # only the tensor data is yielded in the generator
+                yield cid, sl, S
 
     
     # load the wanted models and compile them
@@ -258,7 +268,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
             pass # happens in tf 2.3 when there is no valid MSA
         del model
 
-    wellformed_msas = [f for f in fasta_paths if f not in path_ids_with_empty_sequences and f not in path_ids_without_reference_clade]
+    wellformed_msas = [a["fasta_path"] for a in aux]
     preds['path'] = wellformed_msas
     preds.move_to_end('path', last = False) # move MSA file name to front
     
@@ -453,41 +463,43 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
                            saved_weights_dir,
                            log_dir,
                            clades,
-                           path,
-                           use_codons = False,
+                           paths,
+                           use_codons = True,
                            tuple_length = 1,
                            batch_size = 30,
                            trans_dict = None,
-                           remove_stop_rows = False
-):
+                           remove_stop_rows = False):
+    """
+     This case is only implemented for 2 classes (binary classification).
+    """
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
     alphabet_size = 4 ** tuple_length
     num_leaves = database_reader.num_leaves(clades)
     
     trans_dict = trans_dict if not trans_dict is None else {}
-    
-    # import the fasta files and filter out empty codon aligned sequences
-    path_ids_without_reference_clade = set()
-    path_ids_with_empty_sequences = set()
+    aux = []
     
     def sequence_generator():
-
-        for f in fasta_paths:
-            if f == "":
-                path_ids_with_empty_sequences.add(f)
-                continue
-            # filter fasta files that have no valid reference clade
-            cid, sl, S = msa_converter.parse_fasta_file(f, clades, trans_dict=trans_dict, remove_stop_rows=remove_stop_rows, 
-                                                        use_amino_acids = use_amino_acids, tuple_length = tuple_length, use_codons = use_codons)
-            if cid == -1:
-                path_ids_without_reference_clade.add(f)
-                continue
-            if cid == -2:
-                path_ids_with_empty_sequences.add(f)
-                continue
-            
-            yield cid, sl, S
+         # conditionally open a .maf or .maf.gz file for input
+        for maffile in paths:
+            opener = open # for regular text files
+            if '.gz' in Path(maffile).suffixes:
+                opener = gzip.open
+            with opener(maffile, "rt") as msas_file:
+                print ("have opened maf file", maffile)
+                for msa in AlignIO.parse(msas_file, "maf"): 
+                    tensor_msas = msa_converter.parse_text_MSA(msa, clades, trans_dict=trans_dict,
+                                                                remove_stop_rows=remove_stop_rows, 
+                                                                use_amino_acids = False,
+                                                                tuple_length = tuple_length,
+                                                                use_codons = use_codons)
+                    for (cid, sl, S, auxdata) in tensor_msas: 
+                        # filter bad MSAs (trivial or missing reference)
+                        if cid < 0:
+                            continue
+                        aux.append(auxdata)    
+                        yield cid, sl, S
 
     
     # load the wanted models and compile them
@@ -497,10 +509,8 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
     loss = tf.keras.losses.CategoricalCrossentropy()
     optimizer = tf.keras.optimizers.Adam(0.0005)
 
-    for n in models:
-        models[n].compile(optimizer = optimizer,
-                          loss = loss,
-                          metrics = [accuracy_metric, auroc_metric])
+    model = next(iter(models.values())) # only one model is supported for now
+    model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
 
     # construct a `tf.data.Dataset` from the fasta files    
     # generate a dataset for these files
@@ -525,45 +535,11 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
     # predict on each model
     preds = collections.OrderedDict()
         
-    for n in models:
-        model = models[n]
-        try:
-            pred = model.predict(dataset)
-            preds[n] = pred.flatten()
-        except UnboundLocalError:
-            pass # happens in tf 2.3 when there is no valid MSA
-        del model
 
-    wellformed_msas = [f for f in fasta_paths if f not in path_ids_with_empty_sequences and f not in path_ids_without_reference_clade]
-    preds['path'] = wellformed_msas
-    preds.move_to_end('path', last = False) # move MSA file name to front
+    try:
+        preds = model.predict(dataset)
+        print ("preds", preds.shape)
+    except UnboundLocalError:
+        pass # happens in tf 2.3 when there is no valid MSA
     
-    for p in path_ids_without_reference_clade:
-        print(f'The species in "{p}" are not in included in a reference clade. Ignoring it.')
-        
-    for p in path_ids_with_empty_sequences:
-        print(f'The MSA "{p}" is empty (after) codon-aligning it. Ignoring it.')
-        
-    final_preds = {}
-    
-    for path in preds['path']:
-        prev_seq_len = -1
-        records = SeqIO.parse(path, "fasta")
-        
-        for record in records:
-            seq_len = int(len(record.seq)/3)
-            # 2 outputs per site for 2 classes
-            seq_len = 2*seq_len
-            #check if the sequence lengths in one file are different
-            if seq_len != prev_seq_len and prev_seq_len != -1:
-                print("All sequences in one MSA should have the same length! Values could possibly be not correctly assigned to the MSA")
-            prev_seq_len = seq_len
-
-        # divide the predictions into parts corresponding to the right sequence 
-        # (currently only works for 1 model)
-        for n in models:
-            final_preds[path] = preds[n][:seq_len]
-            preds[n] = preds[n][seq_len:]
-            
-    return final_preds
-
+    return preds, aux
