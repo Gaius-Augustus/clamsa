@@ -9,6 +9,7 @@ import tensorflow as tf
 import datetime
 import itertools
 from pathlib import Path
+import pandas as pd
 
 from tf_tcmc.tcmc.tcmc import TCMCProbability
 from tf_tcmc.tcmc.tensor_utils import segment_ids
@@ -94,8 +95,12 @@ def train_models(input_dir,
             except TypeError as te:
                 raise Exception(f"Invalid split specification for '{k}': {split_specifications[k]}") from te
 
+    num_positions = None
     # fixed sequence length for ClaSS
-    num_positions = model_hyperparameters["tcmc_class"]["num_positions"][0] if "tcmc_class" in model_hyperparameters else None
+    if "tcmc_class" in model_hyperparameters:
+        num_positions = model_hyperparameters["tcmc_class"]["num_positions"][0] 
+        if tuple_length > 1 and not tuples_overlap:
+            raise Exception(f"Model tcmc_class requires overlapping tuples for tuple length > 1.")
 
     # read the datasets for each wanted basename
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
@@ -160,6 +165,14 @@ def train_models(input_dir,
     try:
         for t in datasets['train'].take(1):
             (sequences, clade_ids, sequence_lengths), models = t
+        
+        try:
+            sequences
+        except NameError:
+            print("The train split is empty. Make sure the tfrecord train files are not empty",
+                  " and if you use a model that requires a fixed sequence length that the model hyperparameters and the sequence lengths in the files match.",
+                   file = sys.stderr, sep = "")
+            sys.exit(1)
 
         if verbose:
             print(f'Example batch of the "train" dataset:\n')
@@ -294,16 +307,16 @@ def train_models(input_dir,
 
 
                 # compile the model for training
-                if model_name == 'tcmc_class':
-                    # CategoricalCrossentropy for the classification guesses and neg LL as a second loss
-                    LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-                    loss = [tf.keras.losses.CategoricalCrossentropy(), LL_loss]
-                    loss_weights = [1.0, .1]
-                    metrics = [[accuracy_metric, auroc_metric], None] # acc and auroc for guesses, none for negLL
-                else:
-                    loss = tf.keras.losses.CategoricalCrossentropy()
-                    loss_weights = None
-                    metrics = [accuracy_metric, auroc_metric]
+                #if model_name == 'tcmc_class':
+                #    # CategoricalCrossentropy for the classification guesses and neg LL as a second loss
+                #    LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
+                #    loss = [tf.keras.losses.CategoricalCrossentropy(), LL_loss]
+                #    loss_weights = [1.0, .1]
+                #    metrics = [[accuracy_metric, auroc_metric], None] # acc and auroc for guesses, none for negLL
+                #else:
+                loss = tf.keras.losses.CategoricalCrossentropy()
+                loss_weights = None
+                metrics = [accuracy_metric, auroc_metric]
 
                 optimizer = tf.keras.optimizers.Adam(0.0005)
 
@@ -346,13 +359,18 @@ def train_models(input_dir,
                 callbacks = callbacks + training_callbacks(model, rundir, wanted_callbacks=None)
 
 
-                model.fit(datasets['train'], 
+                history = model.fit(datasets['train'], 
                           validation_data = datasets['val'], 
                           callbacks = callbacks,
                           epochs = epochs, 
                           steps_per_epoch = batches_per_epoch, 
                           verbose = verbose,
                 )
+                
+                hist_df = pd.DataFrame(history.history)
+                hist_file = f'{save_weights_dir}/{now_str}.history.csv'
+                with open(hist_file, mode='w') as f:
+                    hist_df.to_csv(f)
 
                 # load 'best' model weights and eval the test dataset
                 if datasets['test'] != None:
@@ -360,22 +378,22 @@ def train_models(input_dir,
                     if verbose:
                         print("Evaluating the 'test' dataset:")
 
-                    if model_name == 'tcmc_class':
-                        test_loss, guesses_loss, negLL_loss, guesses_acc, guesses_auroc = model.evaluate(datasets['test'])
+                    #if model_name == 'tcmc_class':
+                    #    test_loss, guesses_loss, negLL_loss, guesses_acc, guesses_auroc = model.evaluate(datasets['test'])
 
-                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
-                            tf.summary.scalar('accuracy', guesses_acc, step=1)
-                            tf.summary.scalar('auroc', guesses_auroc, step=1)
-                            tf.summary.scalar('loss', test_loss, step=1)
-                            tf.summary.scalar('categorical_crossentropy', guesses_loss, step=1)
-                            tf.summary.scalar('negative_loglikelihood', negLL_loss, step=1)
+                    #    with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                    #        tf.summary.scalar('accuracy', guesses_acc, step=1)
+                    #        tf.summary.scalar('auroc', guesses_auroc, step=1)
+                    #        tf.summary.scalar('loss', test_loss, step=1)
+                    #        tf.summary.scalar('categorical_crossentropy', guesses_loss, step=1)
+                    #        tf.summary.scalar('negative_loglikelihood', negLL_loss, step=1)
 
-                    else:
-                        test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
+                    #else:
+                    test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
 
-                        with tf.summary.create_file_writer(f'{rundir}/test').as_default():
-                            tf.summary.scalar('accuracy', test_acc, step=1)
-                            tf.summary.scalar('auroc', test_auroc, step=1)
-                            tf.summary.scalar('loss', test_loss, step=1)
+                    with tf.summary.create_file_writer(f'{rundir}/test').as_default():
+                        tf.summary.scalar('accuracy', test_acc, step=1)
+                        tf.summary.scalar('auroc', test_auroc, step=1)
+                        tf.summary.scalar('loss', test_loss, step=1)
                     
     return 0
