@@ -152,7 +152,7 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
     # it cannot be turned off with logging.set_verbosity(0), however.
     model.load_weights(weights_path, by_name = True, skip_mismatch = True)
     
-    return model
+    return model_name, model
 
 
 
@@ -270,17 +270,21 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     num_positions = None  
 
     for n in models:
-        if n == "tcmc_class":
-            LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-            models[n].compile(optimizer = optimizer,
-                              loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
-                              loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
-                              metrics = [[accuracy_metric, auroc_metric], None])
-            num_positions = models[n].get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
-        else:
-            models[n].compile(optimizer = optimizer,
-                              loss = loss,
-                              metrics = [accuracy_metric, auroc_metric])
+        #if models[n][0] != "tcmc_class":
+        models[n][1].compile(optimizer = optimizer,
+                          loss = loss,
+                          metrics = [accuracy_metric, auroc_metric])
+
+        #else:
+        if models[n][0] == "tcmc_class":
+            #LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
+            #models[n].compile(optimizer = optimizer,
+            #                  loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
+            #                  loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
+            #                  metrics = [[accuracy_metric, auroc_metric], None])
+
+            num_positions = models[n][1].get_config()['layers'][[layer['class_name'] for layer in models[n][1].get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
+
         # export TCMC parameters, experimental, make this an option
         # evo_layer = models[n].get_layer(index=2)
         # evo_layer.export_matrices("rates-Q.txt", "rates-pi.txt")
@@ -332,7 +336,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     preds = collections.OrderedDict()
 
     for n in models:
-        model = models[n]
+        model = models[n][1]
         try:
             pred = model.predict(dataset)
             if num_classes > 2:
@@ -391,17 +395,20 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     num_positions = None
 
     for n in models:
-        if n == "tcmc_class":
-            LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-            models[n].compile(optimizer = optimizer,
-                              loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
-                              loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
-                              metrics = [[accuracy_metric, auroc_metric], None])
-            num_positions = models[n].get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
-        else:
-            models[n].compile(optimizer = optimizer,
-                              loss = loss,
-                              metrics = [accuracy_metric, auroc_metric])
+        #if models[n][0] != "tcmc_class":
+        models[n][1].compile(optimizer = optimizer,
+                          loss = loss,
+                          metrics = [accuracy_metric, auroc_metric])
+
+        #else:
+        if models[n][0] == "tcmc_class":
+            #LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
+            #models[n].compile(optimizer = optimizer,
+            #                  loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
+            #                  loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
+            #                  metrics = [[accuracy_metric, auroc_metric], None])
+
+            num_positions = models[n][1].get_config()['layers'][[layer['class_name'] for layer in models[n][1].get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
 
 
     # construct a `tf.data.Dataset` from the fasta files    
@@ -422,6 +429,16 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         dataset = datasets[p]
         if num_positions:
             dataset = dataset.filter(lambda model, clade_id, sequence_length, sequence_onehot: sequence_length == num_positions)
+            # make sure dataset isnt empty
+            for t in dataset.take(1):
+                model, clade_ids, sequence_lengths, sequences  = t
+            try:
+                sequences
+            except NameError:
+                print(f'The dataset from file {p} is empty. Make sure the tfrecord files are not empty and if you use a model that requires a fixed sequence length that the model hyperparameters and the sequence lengths in the files match.',
+                       file = sys.stderr, sep = "")
+                sys.exit(1)
+
         dataset = dataset.padded_batch(batch_size, 
                                        padded_shapes = padded_shapes, 
                                        padding_values = (
@@ -479,7 +496,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
 
         # evaluate the models
         for n in models:
-            model = models[n]
+            model = models[n][1]
             try:
                 pred = model.predict(dataset)
                 if num_classes > 2:
