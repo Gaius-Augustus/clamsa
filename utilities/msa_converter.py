@@ -28,7 +28,7 @@ stop_codons = {"taa", "tag", "tga"}
 class MSA(object):
     def __init__(self, label = None, chromosome_id = None, start_index = None, end_index = None,
                  is_on_plus_strand = False, frame = 0, spec_ids = [], offsets = [], sequences = [], use_amino_acids = False, tuple_length = 1,
-                 fname = None, use_codons = False):
+                 fname = None, use_codons = False, removeFinalStopColumn = True):
         self.label = label # label, class, e.g. y=1 for coding, y=0 for non-coding
         self.chromosome_id = chromosome_id
         self.start_index = start_index # chromosomal position
@@ -46,6 +46,8 @@ class MSA(object):
         self.fname = fname
         self.use_codons = use_codons
         self.is_codon_aligned = False
+        self.removeFinalStopColumn = removeFinalStopColumn
+
     @property
     def coded_sequences(self, alphabet = "acgt"):
         if self.use_amino_acids:
@@ -90,7 +92,7 @@ class MSA(object):
             sequences = [s[::-1].translate(tbl) for s in sequences]
 
         if not self.is_codon_aligned:
-            cali, self.in_frame_stops = tuple_alignment(sequences, gap_symbols, frame = self.frame, tuple_length = c)
+            cali, self.in_frame_stops = tuple_alignment(sequences, gap_symbols, frame = self.frame, tuple_length = c, removeFinalStopColumn = self.removeFinalStopColumn)
         else:
             cali = sequences
         return cali
@@ -153,7 +155,8 @@ class MSA(object):
 
 
 
-def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3):
+def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3,
+                    removeFinalStopColumn = True):
     """
     Align a list of string sequences to tuples of a fixed length with respect to a set of gap symbols.
 
@@ -229,9 +232,10 @@ def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3):
     ta_matrix = np.vectorize(entry_func)(np.arange(len(S))[:,None],np.arange(len(I)))
 
     # remove last column if it contains a stop codon (happens for single and terminal exons)
-    stops_in_lastcol = set(ta_matrix[:,-1]) & stop_codons
-    if stops_in_lastcol:
-        ta_matrix = ta_matrix[:, 0:-1]
+    if removeFinalStopColumn:
+        stops_in_lastcol = set(ta_matrix[:,-1]) & stop_codons
+        if stops_in_lastcol:
+            ta_matrix = ta_matrix[:, 0:-1]
 
     # check which rows contain an in-frame stop codon elsewhere
     stops = []
@@ -666,7 +670,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
         if strand == -1:
             continue # reverse strand not implemented yet
         for frame in range(3):
-            print (f"frame={frame} strand={strand}")
+            # print (f"frame={frame} strand={strand}")
             alipos = 0
             # read over gaps at the beginning of the reference row
             while refrow[alipos] == '-' and alipos < alilen:
@@ -674,6 +678,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
             alipos, gapsWithin, gapsAfter = right_move(0, frame)
             i = frame
             outMSA = None
+            chrAliStart = refchrStart + i
             outalilen = 0
             while alipos < alilen:
                 nextalipos, gapsWithin, gapsAfter = right_move(alipos)
@@ -705,14 +710,17 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
         for seqrec in msa:
             sequences.append(str(seqrec.seq))
             spec_in_file.append(seqrec.id)
+        numSites = msa.get_alignment_length()
+        if numSites % 3 != 0:
+            print (f"Error: number of sites ({numSites}) not divisible by 3:", msa)
+        numSites = int(numSites / 3) # codon columns
         plus_strand = (msa.annotations["strand"] == 1)
         chrPos = msa.annotations["startPos"]
         msalst.append({"seqs" : sequences, "species" : spec_in_file,
              "frame" : 0, # given to clamsa: start codon right at start of MSA
              "plus_strand" : plus_strand,
-             "seqname" : refChr, "chrPos" : chrPos})
-        print (f"\nfragment {j}:", msa, f"\nf={frame}, ps={plus_strand}", spec_in_file,
-                len(sequences[0]))
+             "seqname" : refChr, "chrPos" : chrPos, "numSites" : numSites})
+        #print (f"\nfragment {j}:", msa, f"\nf={frame}, ps={plus_strand}", spec_in_file, len(sequences[0]))
 
     return msalst
 
@@ -745,6 +753,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         raise TypeError("parse_fasta_file: text_MSA must be either a string or a MultipleSeqAlignment")
 
     tensor_msas = [] # list of MSAs to be returned
+    num_mismatch = 0 # number of MSAs that do not match the reference in length
     for seq_msa in seq_msas:
         sequences = seq_msa["seqs"]
         spec_in_file = seq_msa["species"]
@@ -752,7 +761,9 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         plus_strand = seq_msa["plus_strand"]
         auxdata = None
         if "seqname" in seq_msa: # for BioPython MSAs from MAF
-            auxdata = {"seqname" : seq_msa["seqname"], "chrPos" : seq_msa["chrPos"]}
+            auxdata = {"seqname" : seq_msa["seqname"],
+                       "chrPos" : seq_msa["chrPos"],
+                       "numSites" : seq_msa["numSites"]}
         if "fasta_path" in seq_msa: # for FASTA files
             auxdata = {"fasta_path" : seq_msa["fasta_path"]}
 
@@ -769,13 +780,11 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         n_refs = [len(x) for x in ref_ids]
 
         if 0 == min(n_refs) or max(n_refs) > 1:
-            tensor_msas.append((-1, 0, None, None))
             continue
 
         ref_ids = [x[0] for x in ref_ids]
-
         if len(set(r for (r,i) in ref_ids)) > 1:
-            tensor_msas.append((-1, 0, None, None))
+            # taxon is in multiple trees of the forest
             continue
 
         msa = MSA(
@@ -790,27 +799,25 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
             sequences = sequences,
             use_amino_acids = use_amino_acids,
             tuple_length = tuple_length,
-            use_codons = use_codons
+            use_codons = use_codons,
+            removeFinalStopColumn = False
         )
         # Use the correct onehot encoded sequences
         coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
 
-        # remove all rows with an in-frame stop codon (except last col)
-        stops = msa.in_frame_stops
-        # print (msa, stops)
-        remove_stop_rows = False
-        if stops and remove_stop_rows :
-            msa.delete_rows(stops)
-            coded_sequences = coded_sequences[np.invert(stops)]
-        # print ("after stop deletion:", msa, "\ncoded_sequences=", coded_sequences)
-
-        if len(msa.sequences) < 2:
-            tensor_msas.append((-2, 0, None, None))
+        if len(msa.sequences) < 2: # no alignment left
             continue
         
         sequence_length = len(coded_sequences[0])
+        if sequence_length != auxdata["numSites"]:
+            """ This can happen as the codon construction in tuple_alignment is complicated.
+            Either MSA can be longer than the other and this would mess up the rest of the batch. 
+            Ideally, a tuple_alignment_ref would be written with as many columns as the reference. 
+            """
+            num_mismatch += 1
+            continue
+
         if sequence_length == 0:
-            tensor_msas.append((-2, 0, None, None))
             continue
 
         # cardinality of the alphabet that has been onehot-encoded
@@ -831,6 +838,8 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         S = np.transpose(S, (1,0,2))
         tensor_msas.append((clade_id, sequence_length, S, auxdata))
 
+    if num_mismatch > 0 and len(tensor_msas) > 0 and False:
+        print (f"Warning: {num_mismatch} ({100*num_mismatch/(num_mismatch+len(tensor_msas)):.2f}%) MSAs did not match the reference in length")
     return tensor_msas
 
 

@@ -1,4 +1,4 @@
-# Compile MSAs for ClamSA sitewise that are labeled with whether a codon MSA site is coding or not
+# Compile MSAs for ClaMSA sitewise that are labeled with whether a codon MSA site is coding or not
 from Bio import AlignIO # to read MAF files
 from Bio.Align import MultipleSeqAlignment
 from intervaltree import Interval, IntervalTree

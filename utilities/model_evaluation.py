@@ -489,18 +489,17 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
             with opener(maffile, "rt") as msas_file:
                 print ("have opened maf file", maffile)
                 for msa in AlignIO.parse(msas_file, "maf"): 
-                    tensor_msas = msa_converter.parse_text_MSA(msa, clades, trans_dict=trans_dict,
-                                                                remove_stop_rows=remove_stop_rows, 
-                                                                use_amino_acids = False,
-                                                                tuple_length = tuple_length,
-                                                                use_codons = use_codons)
+                    tensor_msas = msa_converter.parse_text_MSA(
+                        msa, clades, trans_dict = trans_dict,
+                        remove_stop_rows = remove_stop_rows, use_amino_acids = False,     tuple_length = tuple_length, use_codons = use_codons)
                     for (cid, sl, S, auxdata) in tensor_msas: 
                         # filter bad MSAs (trivial or missing reference)
                         if cid < 0:
                             continue
-                        aux.append(auxdata)    
+                        aux.append(auxdata)
+                        if sl != auxdata['numSites']:
+                            sys.die("length mismatch", auxdata)
                         yield cid, sl, S
-
     
     # load the wanted models and compile them
     models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
@@ -538,7 +537,7 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
 
     try:
         preds = model.predict(dataset)
-        print ("preds", preds.shape)
+        # print ("preds", preds.shape)
     except UnboundLocalError:
         pass # happens in tf 2.3 when there is no valid MSA
     
