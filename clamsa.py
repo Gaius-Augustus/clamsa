@@ -709,7 +709,7 @@ dm3.chr1 dmel''',
                 pickle_file.close()
             elif args.in_type == 'maf':
                 # write wig file
-                wg.write_preds_to_wig(preds, aux, args.out)
+                wg.write_preds_to_wig(preds, aux, args.out, logits=True)
             
         else:
             # construct a dataframe from the predictions

@@ -608,7 +608,7 @@ def get_fasta_seqs(fasta_path : str, use_amino_acids, margin_width = 0):
 def get_Bio_seqs(msa : MultipleSeqAlignment):
     """ Returns codon alignments for all frames uninterrupted in the reference
     at least 6 codon alignments (3 frames x 2 strands), provided the input MSA is long enough 
-    @param msa: one MSA object parsed by Biopython
+    @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
     @return List[str]: Sequences (= rows of MSA) in the fasta file
             List[str]: Species names for each row
     """
@@ -623,7 +623,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
     refchrLen = refseqrec.annotations["size"]
     refrow = str(refseqrec.seq)
     rownchars = len(refrow.replace('-', ''))
-    if  rownchars < refchrLen:
+    if rownchars < refchrLen:
         print (f"MAF format error: character number in alignment row ({rownchars}) smaller than annotated ({refchrLen})")
         sys.exit(1)
 
@@ -633,7 +633,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
 
     alilen = len(refrow)
     fragMSAs = []
-
+ 
     """
     distinguish 3 types of coordinates:
     chrPos in reference genome, alipos in MSA, i in reference row (no gaps)
@@ -660,6 +660,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
         return alipos, gapsWithin, gapsAfter
 
     def appendMSA(outMSA, frame, strand, chrAliStart):
+        """ append the MSA to the list of fragment MSAs"""
         if outMSA is not None and outMSA.get_alignment_length() > 0:
             outMSA.annotations["local_frame"] = frame # frame in the fragment, currently not used
             outMSA.annotations["strand"] = strand
@@ -667,8 +668,6 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
             fragMSAs.append(outMSA) #(sequences, spec_in_file, frame, plus_strand)
 
     for strand in (1, -1):
-        if strand == -1:
-            continue # reverse strand not implemented yet
         for frame in range(3):
             # print (f"frame={frame} strand={strand}")
             alipos = 0
@@ -686,7 +685,10 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
                 if gapsWithin == 0 and nextalipos >= alipos + 3:
                     # cut out the codon from msa
                     msa1codon = msa[:,alipos:alipos+3]
-                    
+                    if strand == -1:
+                        " reverse complement the single codon alignment "
+                        for seqrec in msa1codon:
+                            seqrec.seq = seqrec.seq.reverse_complement()
                     if outMSA is None:
                         outMSA = msa1codon
                         chrAliStart = refchrStart + i
@@ -763,7 +765,8 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         if "seqname" in seq_msa: # for BioPython MSAs from MAF
             auxdata = {"seqname" : seq_msa["seqname"],
                        "chrPos" : seq_msa["chrPos"],
-                       "numSites" : seq_msa["numSites"]}
+                       "numSites" : seq_msa["numSites"],
+                       "plus_strand" : seq_msa["plus_strand"]}
         if "fasta_path" in seq_msa: # for FASTA files
             auxdata = {"fasta_path" : seq_msa["fasta_path"]}
 
@@ -792,7 +795,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
             chromosome_id = None, 
             start_index = None,
             end_index = None,
-            is_on_plus_strand = plus_strand,
+            is_on_plus_strand = True, # reverse complement was build before
             frame = frame,
             spec_ids = ref_ids,
             offsets = [],
