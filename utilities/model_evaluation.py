@@ -488,6 +488,7 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
                 opener = gzip.open
             with opener(maffile, "rt") as msas_file:
                 for msa in AlignIO.parse(msas_file, "maf"): 
+                    # print ("seqgen MSA", msa)
                     tensor_msas = msa_converter.parse_text_MSA(
                         msa, clades, trans_dict = trans_dict,
                         remove_stop_rows = remove_stop_rows, use_amino_acids = False,     tuple_length = tuple_length, use_codons = use_codons)

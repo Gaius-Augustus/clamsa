@@ -695,7 +695,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
                     else:
                         outMSA += msa1codon
                     outalilen += 3
-                    # print (f"codon column chrPos={chrPos} i={i} alipos={alipos}", msa1codon)
+                    # print (f"codon column chrAliStart={chrAliStart} i={i} alipos={alipos}", msa1codon)
                 else: # codon will not be scored, fragment ends
                     appendMSA(outMSA, frame, strand, chrAliStart)
                     outMSA = None
@@ -722,7 +722,8 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
              "frame" : 0, # given to clamsa: start codon right at start of MSA
              "plus_strand" : plus_strand,
              "seqname" : refChr, "chrPos" : chrPos, "numSites" : numSites})
-        #print (f"\nfragment {j}:", msa, f"\nf={frame}, ps={plus_strand}", spec_in_file, len(sequences[0]))
+        # print (f"\nfragment {j}:", msa,
+        #       f"\nf={msa.annotations['local_frame']} strand={msa.annotations['strand']}", chrPos, # len(sequences[0]))
 
     return msalst
 
@@ -810,12 +811,12 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
 
         if len(msa.sequences) < 2: # no alignment left
             continue
-        
+
         sequence_length = len(coded_sequences[0])
         if sequence_length != auxdata["numSites"]:
             """ This can happen as the codon construction in tuple_alignment is complicated.
             Either MSA can be longer than the other and this would mess up the rest of the batch. 
-            Ideally, a tuple_alignment_ref would be written with as many columns as the reference. 
+            TODO: write a function tuple_alignment_ref with as many columns as the reference. 
             """
             num_mismatch += 1
             continue
