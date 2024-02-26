@@ -489,9 +489,12 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
             with opener(maffile, "rt") as msas_file:
                 for msa in AlignIO.parse(msas_file, "maf"): 
                     # print ("seqgen MSA", msa)
+                    # Do not require that aligned triplets are in the same frame,
+                    # but simply tile the MSA in colsets of 3 (frame_align_codons = False).
                     tensor_msas = msa_converter.parse_text_MSA(
                         msa, clades, trans_dict = trans_dict,
-                        remove_stop_rows = remove_stop_rows, use_amino_acids = False,     tuple_length = tuple_length, use_codons = use_codons)
+                        remove_stop_rows = remove_stop_rows, use_amino_acids = False,     tuple_length = tuple_length, use_codons = use_codons,
+                        frame_align_codons = False)
                     for (cid, sl, S, auxdata) in tensor_msas: 
                         # filter bad MSAs (trivial or missing reference)
                         if cid < 0:

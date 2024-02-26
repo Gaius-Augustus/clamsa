@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import gzip
+from operator import is_
 import regex as re
 import random
 import numpy as np
@@ -28,7 +29,8 @@ stop_codons = {"taa", "tag", "tga"}
 class MSA(object):
     def __init__(self, label = None, chromosome_id = None, start_index = None, end_index = None,
                  is_on_plus_strand = False, frame = 0, spec_ids = [], offsets = [], sequences = [], use_amino_acids = False, tuple_length = 1,
-                 fname = None, use_codons = False, removeFinalStopColumn = True):
+                 fname = None, use_codons = False, is_codon_aligned = False,
+                 removeFinalStopColumn = True):
         self.label = label # label, class, e.g. y=1 for coding, y=0 for non-coding
         self.chromosome_id = chromosome_id
         self.start_index = start_index # chromosomal position
@@ -45,7 +47,7 @@ class MSA(object):
         self.tuple_length = tuple_length
         self.fname = fname
         self.use_codons = use_codons
-        self.is_codon_aligned = False
+        self.is_codon_aligned = is_codon_aligned
         self.removeFinalStopColumn = removeFinalStopColumn
 
     @property
@@ -734,7 +736,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
 # we generate for phylocsf.
 def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
                    trans_dict=None, remove_stop_rows=False,
-                   use_amino_acids = False, tuple_length = 1):
+                   use_amino_acids = False, tuple_length = 1, frame_align_codons = True):
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
@@ -804,6 +806,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
             use_amino_acids = use_amino_acids,
             tuple_length = tuple_length,
             use_codons = use_codons,
+            is_codon_aligned = not frame_align_codons,
             removeFinalStopColumn = False
         )
         # Use the correct onehot encoded sequences
@@ -812,6 +815,9 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         if len(msa.sequences) < 2: # no alignment left
             continue
 
+        #print ("codon MSA")
+        #for cs in msa.codon_aligned_sequences:
+        #    print (cs)
         sequence_length = len(coded_sequences[0])
         if sequence_length != auxdata["numSites"]:
             """ This can happen as the codon construction in tuple_alignment is complicated.
@@ -842,7 +848,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         S = np.transpose(S, (1,0,2))
         tensor_msas.append((clade_id, sequence_length, S, auxdata))
 
-    if num_mismatch > 0 and len(tensor_msas) > 0 and False:
+    if num_mismatch > 0 and len(tensor_msas) > 0:
         print (f"Warning: {num_mismatch} ({100*num_mismatch/(num_mismatch+len(tensor_msas)):.2f}%) MSAs did not match the reference in length")
     return tensor_msas
 
