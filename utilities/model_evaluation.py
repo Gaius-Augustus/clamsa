@@ -155,85 +155,6 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
     return model_name, model
 
 
-
-
-
-
-
-def parse_fasta_file(fasta_path, clades, margin_width=0):
-    
-    species = [msa_converter.leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
-    
-    with gzip.open(fasta_path, 'rt') if fasta_path.endswith('.gz') else open(fasta_path, 'r') as fasta_file:            
-        entries = [rec for rec in SeqIO.parse(fasta_file, "fasta")]
-    # parse the species names
-    spec_in_file = [e.id.split('|')[0] for e in entries]
-
-    # compare them with the given references
-    ref_ids = [[(r,i) for r in range(len(species))  for i in range(len(species[r])) if s in species[r][i] ] for s in spec_in_file]
-
-    # check if these are contained in exactly one reference clade
-    n_refs = [len(x) for x in ref_ids]
-
-    if 0 == min(n_refs) or max(n_refs) > 1:
-        return None
-
-    ref_ids = [x[0] for x in ref_ids]
-
-    if len(set(r for (r,i) in ref_ids)) > 1:
-        return None
-
-    # the first entry of the fasta file has the header informations
-    header_fields = entries[0].id.split("|")
-
-    # read the sequences and trim them if wanted
-    sequences = [str(rec.seq).lower() for rec in entries]
-    sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
-
-    msa = msa_converter.MSA(
-        model = None,
-        chromosome_id = None, 
-        start_index = None,
-        end_index = None,
-        is_on_plus_strand = True if len(header_fields) < 5 or header_fields[4] != 'revcomp' else False,
-        frame = int(header_fields[2][-1]),
-        spec_ids = ref_ids,
-        offsets = [],
-        sequences = sequences
-    )
-    # Use the correct onehot encoded sequences
-    coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
-    
-    # Infer the length of the sequences
-    sequence_length = len(coded_sequences[1])  
-    
-    if sequence_length == 0:
-        return None
-
-    # cardinality of the alphabet that has been onehot-encoded
-    s = coded_sequences.shape[-1]
-    
-    # get the id of the used clade and leaves inside this clade
-    clade_id = msa.spec_ids[0][0]
-    num_species = max([len(specs) for specs in species])
-    leaf_ids = [l for (c,l) in msa.spec_ids]
-    
-    
-    # embed the coded sequences into a full MSA for the whole leaf-set of the given clade
-    S = np.ones((num_species, sequence_length, s), dtype = np.int32)
-    S[leaf_ids,...] = coded_sequences
-    
-    # make the shape conform with the usual way datasets are structured,
-    # namely the columns of the MSA are the examples and should therefore
-    # be the first axis
-    S = np.transpose(S, (1,0,2))
-    
-    return clade_id, sequence_length, S
-
-    
-    
-    
-    
 def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
                            saved_weights_dir,
                            log_dir,
@@ -246,7 +167,9 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
                            batch_size = 30,
                            trans_dict = None,
                            remove_stop_rows = False,
-                           num_classes = 2
+                           num_classes = 2,
+                           sitewise = False,
+                           classify = False
 ):
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -339,12 +262,15 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         model = models[n][1]
         try:
             pred = model.predict(dataset)
-            if num_classes > 2:
-                for c in range(num_classes):
-                    n_c = n + "_class_" + str(c)
-                    preds[n_c] = pred[:, c]
+            if sitewise:
+                preds[n] = pred.flatten()
             else:
-                preds[n] = pred[:, 1]
+                if num_classes > 2:
+                    for c in range(num_classes):
+                        n_c = n + "_class_" + str(c)
+                        preds[n_c] = pred[:, c]
+                else:
+                    preds[n] = pred[:, 1]
         except UnboundLocalError:
             pass # happens in tf 2.3 when there is no valid MSA
         del model
@@ -361,8 +287,33 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
 
     for p in path_ids_with_unusable_sequences:
         print(f'The MSA "{p}" is not usable. Ignoring it.')
+        
+    if sitewise:
+        final_preds = {}
+        
+        for path in preds['path']:
+            prev_seq_len = -1
+            records = SeqIO.parse(path, "fasta")
+            
+            for record in records:
+                seq_len = int(len(record.seq)/3)
+                if classify:
+                    # 2 outputs per site for 2 classes
+                    seq_len = 2*seq_len
+                #check if the sequence lengths in one file are different
+                if seq_len != prev_seq_len and prev_seq_len != -1:
+                    print("All sequences in one MSA should have the same length! Values could possibly be not correctly assigned to the MSA")
+                prev_seq_len = seq_len
 
-    return preds
+            # divide the predictions into parts corresponding to the right sequence 
+            # (currently only works for 1 model)
+            for n in models:
+                final_preds[path] = preds[n][:seq_len]
+                preds[n] = preds[n][seq_len:]
+                
+        return final_preds
+    else:
+        return preds
 
 
 
@@ -477,8 +428,8 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
         aligned_sequences = tf.reduce_any(nontrivial_entries_batched, axis=1)
         aligned_sequences = tf.reduce_sum(tf.cast(aligned_sequences, dtype=tf.int64), axis=-1)
 
-        model = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
-        return (aligned_sequences, sequence_lengths, model)
+        label = tf.cast(tf.argmax(y, axis=1), dtype=tf.int64)
+        return (aligned_sequences, sequence_lengths, label)
 
 
     # predict on each model

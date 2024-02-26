@@ -1,0 +1,1 @@
+python ../clamsa.py convert fasta ../examples/diptera/*.fasta --basename diptera --splits '{"train-m0": 0.6, "test-m0": 0.2, "val-m0": 0.2}' --tf_out_dir ../examples/test_sampled --clades ../examples/DipteraTree_rooted.txt --use_codons --dNdS --subsample_small_omega 0.001 --subsample_separator 1.3
