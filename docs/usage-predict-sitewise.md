@@ -16,7 +16,7 @@ Run ClaMSA on the example input with
 	--model_ids '{ "diverse64mammals" : "mammals-sitewise" }' \
 	--out coding_sitewise # output stem
 ```
-Here, `diverse64.nwk` is a tree of 64 diverse mammalian species that matches the species names in the MAF input file `TLCD3A-diverse64.maf`. The tree is scaled to 1 expected codon mutation per time unit.
+Here, `diverse64.nwk` is a tree of 64 diverse mammalian species that matches the species names in the MAF input file `TLCD3A-diverse64.maf`. The input MAF file can be `gzip`ed. The tree is scaled to 1 expected codon mutation per time unit.
 
 Above command produces 6 output files `coding_sitewise{0..5}.wig`, such that frames 0, 1, 2 are on the forward and frames 3, 4, 5 are on the reverse strand. These files can be uploaded as custom tracks to the UCSC genome browser to produce a visualization as this:
 

@@ -52,7 +52,7 @@ def read_gff(gff_file, strand = "both"):
     return forest
 
 
-def process_MSA(msa, refspecies, sample_freq_nongenic, minlen):
+def process_MSA(msa, refspecies, sample_freq_nongenic, sample_freq_ovlp_oppositestrand, minlen):
     """
     Process a single MSA. Use the global forest variable to determine which codon sites are coding.
     Output 6 new site-labeled MSAs in FASTA format, one for each frame and strand.
@@ -71,19 +71,26 @@ def process_MSA(msa, refspecies, sample_freq_nongenic, minlen):
     refchrStart = refseqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
     refchrLen = refseqrec.annotations["size"]
     refchrEnd = refchrStart + refchrLen # exclusive
-    if chr not in forest:
-        print ("Warning: reference chromosome %s not found in the annotation" % chr)
-        return
-    tree = forest[chr]
-    ovlpCDS = sorted(tree[refchrStart:refchrEnd]) # all CDS overlapping the reference sequence
+
     refrow = str(seqrec.seq)
     if len(refrow) < refchrLen:
         print ("Error: alignment row length %s smaller than annotated (%s)" % (len(refrow), refchrLen))
         sys.exit(1)
 
+    if chr not in forest:
+        print ("Warning: reference chromosome %s not found in the annotation" % chr)
+        return
+    tree = forest[chr]
+    tree_oppo = forest_oppo[chr]
+
+    ovlpCDS = sorted(tree[refchrStart:refchrEnd]) # all CDS overlapping the reference sequence
+    ovlpCDS_oppo = sorted(tree_oppo[refchrStart:refchrEnd]) # all overlapping minus strand CDS
+
     sixMSAs = []
     pos_sites = sites = 0
-    if ovlpCDS or np.random.random() < sample_freq_nongenic:
+    if ovlpCDS or \
+        (ovlpCDS_oppo and np.random.random() < sample_freq_ovlp_oppositestrand) or \
+        np.random.random() < sample_freq_nongenic:
         sixMSAs, pos_sites, sites = six_frame_loop(msa, refrow, refchrStart, ovlpCDS, minlen)
 
     return sixMSAs, pos_sites, sites
@@ -209,18 +216,27 @@ if __name__ == '__main__':
     parser.add_argument('--anno', required=True, type=str, help='genome annotation file in GFF')
     parser.add_argument('--minlen', type=int, help='minimum MSA length in codons', default=7)
     parser.add_argument('--sample_freq_nongenic', type=float, help='Alignments not overlapping a gene on the forward strand are sampled with this probability.', default=0.02)
+    parser.add_argument('--sample_freq_ovlp_oppositestrand', type=float, help='Alignments overlapping a gene on the reverse strand are sampled with this probability.', default=0.5)
 
     args = parser.parse_args()
 
     if args.sample_freq_nongenic < 0 or args.sample_freq_nongenic > 1:
         print ("Error: sample_freq_nongenic must be between 0 and 1")
         sys.exit(1)
-    
+
+    if args.sample_freq_ovlp_oppositestrand < 0 or args.sample_freq_ovlp_oppositestrand > 1:
+        print ("Error: sample_freq_ovlp_oppositestrand must be between 0 and 1")
+        sys.exit(1)
+
     num_MSA = pos_sites = sites = 0
     debug = False
 
     # read the annotation file
     forest = read_gff(args.anno, strand = +1)
+
+    # to allow the enrichment of false positives on the opposite strand
+    # collect coding regions on the reverse strand
+    forest_oppo = read_gff(args.anno, strand = -1)
 
     # stream through the MSA file
 
@@ -243,6 +259,7 @@ if __name__ == '__main__':
                     jobitemsit = zip(tqdm(AlignIO.parse(msas_file, "maf"), unit="MSAs"),
                                           repeat(args.refspecies),
                                           repeat(args.sample_freq_nongenic),
+                                          repeat(args.sample_freq_ovlp_oppositestrand),
                                           repeat(args.minlen))
                     print (f"\nProcessing MSAs in parallel with {pool._processes} processes")
                     while jobitemsit:
