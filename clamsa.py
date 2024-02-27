@@ -8,12 +8,14 @@ import json
 import numbers
 import newick
 from pathlib import Path
+import numpy as np
 import pandas as pd
 from Bio import SeqIO
 import pickle
 from collections import OrderedDict
 import warnings
 import utilities.msa_converter as mc
+import utilities.wiggle as wg
 
 # with tf 2.4 there are UserWarnings about converting sparse IndexedSlices to a dense
 # Tensor of unknown shape, that may consume a large amount of memory.
@@ -21,10 +23,10 @@ import utilities.msa_converter as mc
 warnings.filterwarnings("ignore", category=UserWarning)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
 
-def file_exists(arg):
-    if not os.path.isfile(arg):
-        raise argparse.ArgumentTypeError(f"The file {arg} does not exist!")
-    return arg
+def file_exists(path):
+    if not os.path.isfile(path):
+        raise argparse.ArgumentTypeError(f"The file {path} does not exist!")
+    return path
 
 def folder_exists_and_is_writable(arg):
     if not os.path.isdir(arg) or not os.access(arg, os.W_OK):
@@ -105,7 +107,7 @@ Use one of the following commands:
 
         parser.add_argument('--basename',
                 metavar = 'BASENAME',
-                help = 'The base name of the output files to be generated. By default a concatination of the input files is used.')
+                help = 'The base name of the output files to be generated. By default a concatenation of the input files is used.')
 
         parser.add_argument('--phylocsf_out_dir',
                 help = 'Specifies that the MSA database should (also) be converted to PhyloCSF format.',
@@ -235,6 +237,10 @@ Use one of the following commands:
                 type = float,
                 default=1.0)
 
+        parser.add_argument('--no_codon_alignment',
+                help = 'Assume that the input MSA is already codon-aligned.',
+                action = 'store_true')
+
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
@@ -348,7 +354,8 @@ Use one of the following commands:
                         num_positions = args.num_positions,
                         use_compression = args.use_compression,
                         sitewise = args.sitewise,
-                        verbose = args.verbose)
+                        verbose = args.verbose,
+                        no_codon_alignment = args.no_codon_alignment)
 
                 print(f'The datasets have sucessfully been saved in tfrecord files.')
             
@@ -393,7 +400,7 @@ Use one of the following commands:
         
         parser.add_argument('--merge_behaviour',
                             metavar='MERGE_BEHAVIOUR',
-                            help='In which ratio the respective splits for each basename shall be merged. The possible modes are: "evenly", "w_1 ... w_n". Where "evenly" means all basenames have the same weight. A set of costum weights can be given directly. Default is "evenly".',
+                            help='In which ratio the respective splits for each basename shall be merged. The possible modes are: "evenly", "w_1 ... w_n". Where "evenly" means all basenames have the same weight. A set of custom weights can be given directly. Default is "evenly".',
                             nargs='+',
         ) 
         # possible extensions:  "columns", "sequences"
@@ -543,15 +550,15 @@ Use one of the following commands:
             formatter_class=argparse.RawTextHelpFormatter)
 
         parser.add_argument('in_type',
-                choices=['fasta', 'tfrecord'],
+                choices=['fasta', 'tfrecord', 'maf'],
                 metavar='INPUT_TYPE',
-                help='Specif the input file type. Supported are: {fasta, tfrecord}',
+                help='Specif the input file type. Supported are: {fasta, tfrecord, maf}',
         )
         
 
         parser.add_argument('input', 
                             metavar='INPUT',
-                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.',
+                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.\nIf INPUT_TYPE == maf: A (gzipped) MAF file. A .wig file with coding probabilities of codons in all six-frames is output. Requires --sitewise option',
                             type=file_exists,
                             nargs='+',
         )
@@ -621,9 +628,15 @@ Use one of the following commands:
                            )
         
         
+        parser.add_argument('--out', 
+                           metavar='OUTPUT_FILE',
+                           help='Output file name for the predictions. CSV for FASTA input, wig for MAF input.',
+                           type = str
+        )
+              
         parser.add_argument('--out_csv', 
                            metavar='OUT_CSV',
-                           help='Output file name for the *.csv file containing the predictions.',
+                           help='For backwards compatibility: Output file name for the *.csv file containing the predictions. Use --out instead.',
         )
 
         parser.add_argument('--name_translation', 
@@ -667,20 +680,18 @@ dm3.chr1 dmel''',
         # default the log_dir to the saved_weights_dir
         if args.log_basedir is None:
             args.log_basedir = args.saved_weights_basedir
-            
-        if args.in_type == 'fasta':
 
-            #import on demand (importing tf is costly)
-            import utilities.model_evaluation as me
+        if args.out is not None and args.out_csv is not None:
+            print("Only one of --out and --out_csv can be specified. Please use --out only.")
+            return
+        if args.out_csv is not None:
+            args.out = args.out_csv
+            print("Warning: --out_csv is deprecated. Please use --out instead.")
 
-            # import the list of fasta file paths
-            fasta_paths = []
-            for fl in args.input:
-                with open(fl) as f:
-                    fasta_paths.extend(f.read().splitlines())
+        # import on demand (importing tf is costly)
+        import utilities.model_evaluation as me
 
-            model_ids = OrderedDict(args.model_ids) # to fix the models order as in the command-line argument
-
+        if args.in_type == 'fasta' or args.in_type == 'maf': # text MSA input
             # read name->taxon_id translation tables into dictionary if specified
             trans_dict = {}
             if not args.name_translation is None:
@@ -694,32 +705,34 @@ dm3.chr1 dmel''',
                             if fasta_name in trans_dict and trans_dict[fasta_name] != taxon_id:
                                 raise Exception(f"Translation file {trfn} contains conflicting duplicates: {fasta_name} -> {trans_dict[fasta_name]}, {taxon_id}")
                             trans_dict[fasta_name] = taxon_id
+            model_ids = OrderedDict(args.model_ids) # to fix the models order as on the command line
 
-                            
-            preds = me.predict_on_fasta_files(trial_ids = args.model_ids,
-                                              saved_weights_dir = args.saved_weights_basedir,
-                                              log_dir = args.log_basedir,
-                                              clades = args.clades,
-                                              fasta_paths = fasta_paths,
-                                              use_amino_acids = args.use_amino_acids,
-                                              use_codons = args.use_codons,
-                                              tuple_length = args.tuple_length,
-                                              tuples_overlap = args.tuples_overlap,
-                                              batch_size = args.batch_size,
-                                              trans_dict = trans_dict,
-                                              remove_stop_rows = args.remove_stop_rows,
-                                              num_classes = args.num_classes,
-                                              sitewise = args.sitewise,
-                                              classify = args.classify
-            )
+            if args.in_type == 'fasta':
+                preds = me.predict_on_fasta_files( \
+                    trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
+                    log_dir = args.log_basedir, clades = args.clades, input_files = args.input,
+                    use_amino_acids = args.use_amino_acids, use_codons = args.use_codons,
+                    tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
+                    batch_size = args.batch_size, trans_dict = trans_dict, 
+                    remove_stop_rows = args.remove_stop_rows, num_classes = args.num_classes, 
+                    sitewise = args.sitewise, classify = args.classify)
+            else: # in_type == 'maf'
+                if args.num_classes != 2:
+                    raise Exception("maf input is currently only supported for binary classification")
+                if len(args.model_ids) > 1:
+                    raise Exception("maf input is currently only supported for a single model.")
+                preds, aux = me.predict_on_maf_files( \
+                    trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
+                    log_dir = args.log_basedir, clades = args.clades,
+                    paths = args.input, use_codons = args.use_codons,
+                    tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
+                    batch_size = args.batch_size, trans_dict = trans_dict, 
+                    remove_stop_rows = args.remove_stop_rows)
 
-        if args.in_type == 'tfrecord':
+        elif args.in_type == 'tfrecord':
             if args.sitewise:
-                print("Sitewise prediction currently only works on fasta files")
+                print("Sitewise prediction currently does not work on tfrecord files")
                 return
-            
-            #import on demand (importing tf is costly)
-            import utilities.model_evaluation as me
             
             preds = me.predict_on_tfrecord_files(trial_ids=args.model_ids,
                                                  saved_weights_dir=args.saved_weights_basedir,
@@ -733,21 +746,27 @@ dm3.chr1 dmel''',
                                                  batch_size = args.batch_size,
                                                  num_classes = args.num_classes
             )
-            
-        
+        else:
+            raise Exception(f"Unsupported input type: {args.in_type}")
+
+        # determine output format and output the preds
         if args.sitewise:
-            # write dictionary to file
-            # for a classification task: probabilitys of both classes are output in succession
-            if args.out_csv is None:
-                print(preds, end = "")
-            else:
-                with open (args.out_csv, mode = 'w') as f:
-                    for path, values in preds.items():
-                        f.write('%s:%s\n' % (path, values))
-            
-            pickle_file = open("clamsa_out.pkl", "wb")
-            pickle.dump(preds, pickle_file)
-            pickle_file.close()
+            if args.in_type == 'fasta':
+                # write dictionary to file
+                # for a classification task: probabilitys of both classes are output in succession
+                if args.out is None:
+                    print(preds, end = "")
+                else:
+                    with open (args.out, mode = 'w') as f:
+                        for path, values in preds.items():
+                            f.write('%s:%s\n' % (path, values))
+                
+                pickle_file = open("clamsa_out.pkl", "wb")
+                pickle.dump(preds, pickle_file)
+                pickle_file.close()
+            elif args.in_type == 'maf':
+                # write wig file
+                wg.write_preds_to_wig(preds, aux, args.out, logits=True)
             
         else:
             # construct a dataframe from the predictions

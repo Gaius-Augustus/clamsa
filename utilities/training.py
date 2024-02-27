@@ -110,8 +110,12 @@ def train_models(input_dir,
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
 
     wanted_splits = [split for split in splits.values() if split != None ]
-    unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, 
-                        num_positions = num_positions, sitewise = sitewise, seed = None, buffer_size = 1000, should_shuffle=True) for b in basenames}
+    try:
+        unmerged_datasets = {b: database_reader.get_datasets(input_dir, b, wanted_splits, num_leaves = num_leaves, alphabet_size = alphabet_size, 
+                             seed = None, buffer_size = 1000, should_shuffle=True, sitewise = sitewise, num_positions = num_positions) for b in basenames}
+    except Exception as e:
+        print(f'Error while reading the tfrecord datasets for basenames: {basenames}')
+        raise(e)
 
     if any(['train' not in unmerged_datasets[b] for b in basenames]):
         raise Exception("A 'train' split must be specified!")
@@ -402,51 +406,51 @@ def train_models(input_dir,
                 with open(hist_file, mode='w') as f:
                     hist_df.to_csv(f)
 
-                plt.plot(history.history['loss'])
-                plt.plot(history.history['val_loss'])
-                plt.title("Model Loss")
-                plt.ylabel("Loss")
-                plt.xlabel("Epoche")
-                plt.legend(["train", "val"], loc = "upper right")
-                plt.savefig("loss_plot.png")
+                #plt.plot(history.history['loss'])
+                #plt.plot(history.history['val_loss'])
+                #plt.title("Model Loss")
+                #plt.ylabel("Loss")
+                #plt.xlabel("Epoche")
+                #plt.legend(["train", "val"], loc = "upper right")
+                #plt.savefig("loss_plot.png")
                 #plt.show()
-                plt.clf()
+                #plt.clf()
                 
                 if classify:
                     plt.plot(history.history['val_accuracy'])   
                     plt.title("Modell \"accuracy\"")
                     plt.ylabel("\"accuracy\"")
-                    plt.xlabel("Epoche")
+                    plt.xlabel("Epoch")
                     plt.legend(["\"accuracy\""], loc = "lower right")
                     plt.savefig("accuracy_plot.png")
                     plt.clf()
                     
                     #plt.plot(history.history['val_auroc'])   
-                    #plt.title("Modell AUC")
+                    #plt.title("Model AUC")
                     #plt.ylabel("AUC")
-                    #plt.xlabel("Epoche")
+                    #plt.xlabel("Epoch")
                     #plt.legend(["AUC"], loc = "lower right")
                     #plt.savefig("auroc_plot.png")
                     #plt.clf()
 
-                else:
+                elif sitewise and not classify:
                     plt.plot(history.history['val_sel_recall0'])
                     plt.plot(history.history['val_sel_recall1'])
                     plt.plot(history.history['val_sel_recall2'])     
-                    plt.title("Modell Sensitivität")
-                    plt.ylabel("Sensitivität")
-                    plt.xlabel("Epoche")
-                    plt.legend(["Sensitivität0", "Sensitivität1", "Sensitivität2"], loc = "lower right")
+                    plt.title("Model Sensitivity")
+                    plt.ylabel("Sensitivity")
+                    plt.xlabel("Epoch")
+                    plt.legend(["Sensitivity0", "Sensitivity1", "Sensitivity2"], loc = "lower right")
                     plt.savefig("recall_plot.png")
                     plt.clf()
                     
                     plt.plot(history.history['val_sel_precision0'])
                     plt.plot(history.history['val_sel_precision1'])
                     plt.plot(history.history['val_sel_precision2'])     
-                    plt.title("Modell Genauigkeit")
-                    plt.ylabel("Genauigkeit")
-                    plt.xlabel("Epoche")
-                    plt.legend(["Genauigkeit0", "Genauigkeit1", "Genauigkeit2"], loc = "lower right")
+                    plt.title("Model Precision")
+                    plt.ylabel("Precision")
+                    plt.xlabel("Epoch")
+                    plt.legend(["Precision0", "Precision1", "Precision2"], loc = "lower right")
                     plt.savefig("precision_plot.png")
                     plt.clf()
 

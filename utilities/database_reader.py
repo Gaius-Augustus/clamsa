@@ -46,13 +46,13 @@ def find_exported_tfrecord_files(folder, basename, by_splits = False):
     files = os.listdir(folder)
     export_re = re.compile(f'{basename}(?:-([a-zA-Z]+))?(?:-m([0-9]+))?')
     wanted_files = filter(export_re.match, files)
-    
+
     splits = defaultdict(list)
     for f in wanted_files:
         split, label = export_re.findall(f)[0]
         key = (split, label)
         splits[key].append(folder + f)
-        
+
     if by_splits:
         split_names = set(s for (s,m) in splits.keys())
         splits_by_name = {name: {} for name in split_names}
@@ -61,7 +61,7 @@ def find_exported_tfrecord_files(folder, basename, by_splits = False):
             splits_by_name[s][label] = splits[(s,m)]
             
         splits = splits_by_name
-    
+
     return dict(splits)
 
 
@@ -194,6 +194,7 @@ def get_datasets(folder, basename, wanted_splits, num_leaves, alphabet_size, num
 
     # get all files as a nested dict. by their split names
     files = find_exported_tfrecord_files(folder, basename, by_splits = True)
+    print ("files:", files)
     # set up an entry parse function for the datasets
     parser = partial(parse_tfrecord_entry, num_leaves = num_leaves, alphabet_size = alphabet_size, sitewise = sitewise)
     
