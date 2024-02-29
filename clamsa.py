@@ -630,7 +630,7 @@ Use one of the following commands:
         
         parser.add_argument('--out', 
                            metavar='OUTPUT_FILE',
-                           help='Output file name for the predictions. CSV for FASTA input, wig for MAF input.',
+                           help='Output file name for the predictions. CSV for FASTA input, wig for sitewise with MAF input, JSON for sliding_window with MAF input.',
                            type = str
         )
               
@@ -664,8 +664,14 @@ dm3.chr1 dmel''',
                             help='Predict sitewise values (needs a trained sitewise model). Currently only works on fasta files',
                             action='store_true',
         )
+
         parser.add_argument('--classify',
                             help='Predict sitewise classes (needs a trained sitewise classification model). Currently only works on fasta files',
+                            action='store_true',
+        )
+
+        parser.add_argument('--sliding_window',
+                            help='Predict in a sliding window manner. Works only for position specific models on maf files.',
                             action='store_true',
         )
 
@@ -708,6 +714,9 @@ dm3.chr1 dmel''',
             model_ids = OrderedDict(args.model_ids) # to fix the models order as on the command line
 
             if args.in_type == 'fasta':
+                if args.sliding_window:
+                    print("Sliding window prediction currently does not work on fasta files")
+                    return
                 preds = me.predict_on_fasta_files( \
                     trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
                     log_dir = args.log_basedir, clades = args.clades, input_files = args.input,
@@ -716,6 +725,7 @@ dm3.chr1 dmel''',
                     batch_size = args.batch_size, trans_dict = trans_dict, 
                     remove_stop_rows = args.remove_stop_rows, num_classes = args.num_classes, 
                     sitewise = args.sitewise, classify = args.classify)
+
             else: # in_type == 'maf'
                 if args.num_classes != 2:
                     raise Exception("maf input is currently only supported for binary classification")
@@ -727,11 +737,14 @@ dm3.chr1 dmel''',
                     paths = args.input, use_codons = args.use_codons,
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
                     batch_size = args.batch_size, trans_dict = trans_dict, 
-                    remove_stop_rows = args.remove_stop_rows)
+                    remove_stop_rows = args.remove_stop_rows, sliding_window = args.sliding_window)
 
         elif args.in_type == 'tfrecord':
             if args.sitewise:
                 print("Sitewise prediction currently does not work on tfrecord files")
+                return
+            if args.sliding_window:
+                print("Sliding window prediction currently does not work on tfrecord files")
                 return
             
             preds = me.predict_on_tfrecord_files(trial_ids=args.model_ids,
@@ -767,7 +780,15 @@ dm3.chr1 dmel''',
             elif args.in_type == 'maf':
                 # write wig file
                 wg.write_preds_to_wig(preds, aux, args.out, logits=True)
-            
+        
+        elif args.sliding_window:
+            for i in range(len(aux)) : aux[i].update({'pred': preds[i,1]})  # combine preds for model/label 1 and aux data
+            out_data = aux
+            # write dictionaries to JSON file
+            outfile = list(args.model_ids.keys())[0]+'.json' if args.out is None else args.out+'.json' # needs to be changed if prediction on maf files with more than one model is permitted
+            with open(outfile, "w") as out_handle:
+                json.dump(out_data, out_handle)
+
         else:
             # construct a dataframe from the predictions
             df = pd.DataFrame.from_dict(preds)

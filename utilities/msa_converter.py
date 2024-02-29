@@ -746,14 +746,73 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
 
     return msalst
 
+def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
+    """ 
+    Get MSAs of length sl that mimic a sliding window across the input MSA and its reverse complement
+    @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
+            sl: length of window msa
+    @return List[str]: Sequences (= rows of MSA) in the fasta file
+            List[str]: Species names for each row
+    """
+    
+    refseqrec = msa[0] # the first sequence is the reference
+    dot = refseqrec.id.find('.')
+    if dot < 0:
+        raise AssertionError("MAF record does not contain a dot - to separate species and seq name")
+
+    refChr = refseqrec.id[dot+1:]
+    refchrLen = refseqrec.annotations["size"]
+    if refchrLen < sl:
+        return []
+    #frame = refseqrec.annotations["frame"]
+    refrow = str(refseqrec.seq)
+    rownchars = len(refrow.replace('-', ''))
+    if rownchars < refchrLen:
+        print (f"MAF format error: character number in alignment row ({rownchars}) smaller than annotated ({refchrLen})")
+        sys.exit(1)
+
+    spec_in_file = []
+    seqname = []
+    strand = []
+    chrStart = []
+    for seqrec in msa: 
+        spec_id = seqrec.id.split('.', 1)  
+        spec_in_file.append(spec_id[0])  # species
+        seqname.append(spec_id[1:][0])  # sequence  name
+        strand.append(seqrec.annotations["strand"])  # strand
+        chrStart.append(seqrec.annotations["start"]+1)  # start pos of sequence, +1 bc 0-based in MAF, here 1-based for GFF comp.
+    
+    orig_strand = [s == 1 for s in strand]  # plus strand or not
+    reverse_strand = [not s for s in orig_strand]  # plus strand or not for reverse complement
+
+    ebony_pos = int(sl/2) # pos of boundary in window
+    alilen = len(refrow)  # alignment length
+    msalst = []
+    for i in range(alilen - sl + 1):
+        window = msa[:,i:i+sl]
+        chrPos = [(start+ebony_pos-1+i, start+ebony_pos+i) for start in chrStart] # tuple encases boundary
+        for i in (1, -1):
+            plus_strand = orig_strand
+            if i == -1:
+                plus_strand = reverse_strand
+                for rec in window:
+                    rec.seq = rec.seq.reverse_complement()
+
+            msalst.append({"seqs" : [str(rec.seq) for rec in window], "species" : spec_in_file,
+                "frame" : 0, # not used
+                "plus_strand" : plus_strand,
+                "seqname" : seqname, "chrPos" : chrPos})
+
+    return msalst
 
 # Part of this logic also resides inside `import_fasta` and `import_phylocsf`
 #
 # This function is currently just written for the particular fasta header format
 # we generate for phylocsf.
 def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positions = None, 
-                   trans_dict=None, remove_stop_rows=False,
-                   use_amino_acids = False, tuple_length = 1, tuples_overlap = False, frame_align_codons = True):
+                   trans_dict=None, remove_stop_rows=False, use_amino_acids = False,
+                   tuple_length = 1, tuples_overlap = False, frame_align_codons = True,
+                   sliding_window = False):
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
@@ -770,9 +829,16 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
         seq_msas = get_fasta_seqs(text_MSA, use_amino_acids, margin_width)
     elif isinstance(text_MSA, MultipleSeqAlignment):
          # extract multiple MSAs from a MultipleSeqAlignment object
-        seq_msas = get_Bio_seqs(text_MSA)
+        if sliding_window:
+            sl = num_positions + tuple_length - 1
+            seq_msas = get_window_seqs(text_MSA, sl)
+        else:
+            seq_msas = get_Bio_seqs(text_MSA)
     else:
         raise TypeError("parse_fasta_file: text_MSA must be either a string or a MultipleSeqAlignment")
+    
+    if not seq_msas: # empty seq list
+        return [(-1, 0, None, {})]
 
     tensor_msas = [] # list of MSAs to be returned
     num_mismatch = 0 # number of MSAs that do not match the reference in length
@@ -785,8 +851,11 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
         if "seqname" in seq_msa: # for BioPython MSAs from MAF
             auxdata = {"seqname" : seq_msa["seqname"],
                        "chrPos" : seq_msa["chrPos"],
-                       "numSites" : seq_msa["numSites"],
                        "plus_strand" : seq_msa["plus_strand"]}
+            if "numSites" in seq_msa: # sitewise prediction
+                auxdata["numSites"] = seq_msa["numSites"]
+            else: # sliding window prediction
+                auxdata["species"] = spec_in_file 
         if "fasta_path" in seq_msa: # for FASTA files
             auxdata = {"fasta_path" : seq_msa["fasta_path"]}
 
@@ -892,6 +961,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
 
     if num_mismatch > 0 and len(tensor_msas) > 0:
         print (f"Warning: {num_mismatch} ({100*num_mismatch/(num_mismatch+len(tensor_msas)):.2f}%) MSAs did not match the reference in length")
+    
     return tensor_msas
 
 

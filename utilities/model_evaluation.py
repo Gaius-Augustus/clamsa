@@ -153,7 +153,7 @@ def recover_model(trial_id, forest, alphabet_size, log_dir, saved_weights_dir):
     # it cannot be turned off with logging.set_verbosity(0), however.
     model.load_weights(weights_path, by_name = True, skip_mismatch = True)
     
-    return model_name, model
+    return model
 
 
 def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
@@ -194,20 +194,12 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     num_positions = None  
 
     for n in models:
-        #if models[n][0] != "tcmc_class":
-        models[n][1].compile(optimizer = optimizer,
+        models[n].compile(optimizer = optimizer,
                           loss = loss,
                           metrics = [accuracy_metric, auroc_metric])
-
-        #else:
-        if models[n][0] == "tcmc_class":
-            #LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-            #models[n].compile(optimizer = optimizer,
-            #                  loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
-            #                  loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
-            #                  metrics = [[accuracy_metric, auroc_metric], None])
-
-            num_positions = models[n][1].get_config()['layers'][[layer['class_name'] for layer in models[n][1].get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
+        # get num_positions if position specific model
+        tcmc_config = models[n].get_config()['layers'][[layer['class_name'] for layer in models[n].get_config()['layers']].index('TCMCProbability')]['config']
+        if 'num_positions' in tcmc_config and num_positions == None : num_positions = tcmc_config['num_positions'] 
 
         # export TCMC parameters, experimental, make this an option
         # evo_layer = models[n].get_layer(index=2)
@@ -266,7 +258,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
     preds = collections.OrderedDict()
 
     for n in models:
-        model = models[n][1]
+        model = models[n]
         try:
             pred = model.predict(dataset)
             if sitewise:
@@ -291,10 +283,7 @@ def predict_on_fasta_files(trial_ids, # OrderedDict of model ids with keys like 
         
     for p in path_ids_with_empty_sequences:
         print(f'The MSA "{p}" is empty (after) codon-aligning it. Ignoring it.')
-
-    for p in path_ids_with_unusable_sequences:
-        print(f'The MSA "{p}" is not usable. Ignoring it.')
-        
+  
     if sitewise:
         final_preds = {}
         
@@ -353,20 +342,12 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
     num_positions = None
 
     for n in models:
-        #if models[n][0] != "tcmc_class":
-        models[n][1].compile(optimizer = optimizer,
+        models[n].compile(optimizer = optimizer,
                           loss = loss,
                           metrics = [accuracy_metric, auroc_metric])
-
-        #else:
-        if models[n][0] == "tcmc_class":
-            #LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-            #models[n].compile(optimizer = optimizer,
-            #                  loss = {"guesses": tf.keras.losses.CategoricalCrossentropy(), "mean_loglik": LL_loss},
-            #                  loss_weights = {"guesses": 1.0, "mean_loglik": 1.0},
-            #                  metrics = [[accuracy_metric, auroc_metric], None])
-
-            num_positions = models[n][1].get_config()['layers'][[layer['class_name'] for layer in models[n][1].get_config()['layers']].index('TCMCProbability')]['config']['num_positions']
+        # get num_positions if position specific model
+        tcmc_config = models[n].get_config()['layers'][[layer['class_name'] for layer in models[n].get_config()['layers']].index('TCMCProbability')]['config']
+        if 'num_positions' in tcmc_config and num_positions == None : num_positions = tcmc_config['num_positions'] 
 
 
     # construct a `tf.data.Dataset` from the fasta files    
@@ -454,7 +435,7 @@ def predict_on_tfrecord_files(trial_ids, # OrderedDict of model ids with keys li
 
         # evaluate the models
         for n in models:
-            model = models[n][1]
+            model = models[n]
             try:
                 pred = model.predict(dataset)
                 if num_classes > 2:
@@ -509,7 +490,8 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
                            tuples_overlap = False,
                            batch_size = 30,
                            trans_dict = None,
-                           remove_stop_rows = False):
+                           remove_stop_rows = False,
+                           sliding_window = False):
     """
      This case is only implemented for 2 classes (binary classification).
     """
@@ -517,6 +499,24 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
     tuple_length = 3 if use_codons else tuple_length
     alphabet_size = 4 ** tuple_length
     num_leaves = database_reader.num_leaves(clades)
+
+    # load the wanted models and compile them
+    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
+    accuracy_metric = 'accuracy'
+    auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
+    loss = tf.keras.losses.CategoricalCrossentropy()
+    optimizer = tf.keras.optimizers.Adam(0.0005)
+
+    model = next(iter(models.values())) # only one model is supported for now
+    model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
+    
+    # get num_positions if position specific model
+    tcmc_config = model.get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']
+    num_positions = tcmc_config['num_positions'] if 'num_positions' in tcmc_config else None
+
+    if sliding_window and num_positions == None:
+        print("Sliding window prediction currently only works for position specific models.")
+        sys.exit(1)
     
     trans_dict = trans_dict if not trans_dict is None else {}
     aux = []
@@ -534,26 +534,17 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
                     # but simply tile the MSA in colsets of 3 (frame_align_codons = False).
                     tensor_msas = msa_converter.parse_text_MSA(
                         msa, clades, trans_dict = trans_dict,
-                        remove_stop_rows = remove_stop_rows, use_amino_acids = False,     tuple_length = tuple_length, use_codons = use_codons,
-                        frame_align_codons = False)
+                        remove_stop_rows = remove_stop_rows, use_amino_acids = False, num_positions = num_positions,     
+                        tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons,
+                        frame_align_codons = False, sliding_window = sliding_window)
                     for (cid, sl, S, auxdata) in tensor_msas: 
                         # filter bad MSAs (trivial or missing reference)
                         if cid < 0:
                             continue
                         aux.append(auxdata)
-                        if sl != auxdata['numSites']:
+                        if 'numSites' in auxdata and sl != auxdata['numSites']:
                             sys.die("length mismatch", auxdata)
-                        yield cid, sl, S
-    
-    # load the wanted models and compile them
-    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
-    accuracy_metric = 'accuracy'
-    auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
-    loss = tf.keras.losses.CategoricalCrossentropy()
-    optimizer = tf.keras.optimizers.Adam(0.0005)
-
-    model = next(iter(models.values())) # only one model is supported for now
-    model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
+                        yield cid, sl, S   
 
     # construct a `tf.data.Dataset` from the fasta files    
     # generate a dataset for these files
@@ -561,8 +552,6 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
 
     # batch and reshape sequences to match the input specification of tcmc
     #ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size)
-
-
     padded_shapes = ([], [], [None, max(num_leaves), alphabet_size])
     dataset = dataset.padded_batch(batch_size, 
                                    padded_shapes = padded_shapes, 
