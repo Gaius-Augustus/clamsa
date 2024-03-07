@@ -19,7 +19,7 @@ def create_model(forest,
                  sequence_dense_dimension = 16,
                  dense1_dimension = 0,
                  dense2_dimension = 0,
-                 name = "clamsa_class",
+                 name = "clamsa_ebony",
                  num_classes = 2):
 
     num_leaves = database_reader.num_leaves(forest)

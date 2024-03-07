@@ -13,6 +13,7 @@ import pandas as pd
 from Bio import SeqIO
 import pickle
 from collections import OrderedDict
+from operator import itemgetter
 import warnings
 import utilities.msa_converter as mc
 import utilities.wiggle as wg
@@ -630,7 +631,7 @@ Use one of the following commands:
         
         parser.add_argument('--out', 
                            metavar='OUTPUT_FILE',
-                           help='Output file name for the predictions. CSV for FASTA input, wig for sitewise with MAF input, JSON for sliding_window with MAF input.',
+                           help='Output file name for the predictions. CSV for MAF input with --sliding_window and FASTA input, wig for MAF input with --sitewise, GTF for MAF input with --ebony.',
                            type = str
         )
               
@@ -675,6 +676,11 @@ dm3.chr1 dmel''',
                             action='store_true',
         )
 
+        parser.add_argument('--ebony',
+                            help='Score potential exon boundaries. Works only for exon boundary models on maf files.',
+                            action='store_true'
+        )
+
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
 
@@ -717,6 +723,9 @@ dm3.chr1 dmel''',
                 if args.sliding_window:
                     print("Sliding window prediction currently does not work on fasta files")
                     return
+                if args.ebony:
+                    print("Ebony prediction currently does not work on fasta files")
+                    return
                 preds = me.predict_on_fasta_files( \
                     trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
                     log_dir = args.log_basedir, clades = args.clades, input_files = args.input,
@@ -737,7 +746,8 @@ dm3.chr1 dmel''',
                     paths = args.input, use_codons = args.use_codons,
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
                     batch_size = args.batch_size, trans_dict = trans_dict, 
-                    remove_stop_rows = args.remove_stop_rows, sliding_window = args.sliding_window)
+                    remove_stop_rows = args.remove_stop_rows, 
+                    sliding_window = args.sliding_window, ebony = args.ebony)
 
         elif args.in_type == 'tfrecord':
             if args.sitewise:
@@ -745,6 +755,9 @@ dm3.chr1 dmel''',
                 return
             if args.sliding_window:
                 print("Sliding window prediction currently does not work on tfrecord files")
+                return
+            if args.ebony:
+                print("Ebony prediction currently does not work on tfrecord files")
                 return
             
             preds = me.predict_on_tfrecord_files(trial_ids=args.model_ids,
@@ -781,13 +794,46 @@ dm3.chr1 dmel''',
                 # write wig file
                 wg.write_preds_to_wig(preds, aux, args.out, logits=True)
         
+        elif args.ebony:
+            # assemble hints
+            hints = []
+            for score, auxdata in zip(preds[:, 1], aux):
+                # gtf hints format: seqname, source, type, start, end, score, strand, frame, attributes in a semicolon delimited list of AUGUSTUS specific attributes in tag=value pairs
+                seqname = auxdata['seqname']
+                hint_type = auxdata['type']
+                start = auxdata['coords'][0]
+                end = auxdata['coords'][1]
+                strand = '+' if auxdata['plus_strand'] == True else '-'
+                attr = "source=EB"
+                hints.append((seqname, 'clamsa', hint_type, start, end, round(score, 4), strand, '.', attr))
+            hints.sort(key = itemgetter(0,3))  # first sort seqname, then start coord
+            
+            # write to file
+            out_file = args.out if args.out else "ebony_hints.gtf"
+            with open(out_file, 'w') as f:
+                for hint in hints: 
+                    f.write('\t'.join(map(str, hint)) + '\n')
+                    
         elif args.sliding_window:
-            for i in range(len(aux)) : aux[i].update({'pred': preds[i,1]})  # combine preds for model/label 1 and aux data
-            out_data = aux
-            # write dictionaries to JSON file
-            outfile = list(args.model_ids.keys())[0]+'.json' if args.out is None else args.out+'.json' # needs to be changed if prediction on maf files with more than one model is permitted
-            with open(outfile, "w") as out_handle:
-                json.dump(out_data, out_handle)
+            for score, auxdata in zip(preds[:,1], aux): auxdata.update({'pred': score})
+            
+            df = pd.DataFrame.from_dict(aux)
+    
+            from io import StringIO
+            output = StringIO()
+    
+            df.to_csv(output, sep='\t',
+                      float_format = '%.4f', # output precision
+                      index = False,
+                      header = True,
+                      mode = 'w' )
+            outputstr = output.getvalue()
+    
+            if args.out is None:
+                print(outputstr, end = "")
+            else:
+                with open(args.out, 'w') as f:
+                    print(outputstr , end = "", file = f)
 
         else:
             # construct a dataframe from the predictions

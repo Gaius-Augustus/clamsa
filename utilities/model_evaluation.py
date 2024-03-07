@@ -491,7 +491,8 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
                            batch_size = 30,
                            trans_dict = None,
                            remove_stop_rows = False,
-                           sliding_window = False):
+                           sliding_window = False,
+                           ebony = False):
     """
      This case is only implemented for 2 classes (binary classification).
     """
@@ -514,12 +515,14 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
     tcmc_config = model.get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']
     num_positions = tcmc_config['num_positions'] if 'num_positions' in tcmc_config else None
 
-    if sliding_window and num_positions == None:
-        print("Sliding window prediction currently only works for position specific models.")
+    if (sliding_window or ebony) and num_positions == None:
+        print("Sliding window prediction and ebony prediction only work for position specific models.")
         sys.exit(1)
     
     trans_dict = trans_dict if not trans_dict is None else {}
     aux = []
+    #msas = {}
+    #msa_id = 0
     
     def sequence_generator():
          # conditionally open a .maf or .maf.gz file for input
@@ -528,7 +531,7 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
             if '.gz' in Path(maffile).suffixes:
                 opener = gzip.open
             with opener(maffile, "rt") as msas_file:
-                for msa in AlignIO.parse(msas_file, "maf"): 
+                for msa in AlignIO.parse(msas_file, "maf"):
                     # print ("seqgen MSA", msa)
                     # Do not require that aligned triplets are in the same frame,
                     # but simply tile the MSA in colsets of 3 (frame_align_codons = False).
@@ -536,7 +539,7 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
                         msa, clades, trans_dict = trans_dict,
                         remove_stop_rows = remove_stop_rows, use_amino_acids = False, num_positions = num_positions,     
                         tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons,
-                        frame_align_codons = False, sliding_window = sliding_window)
+                        frame_align_codons = False, sliding_window = sliding_window, ebony = ebony)
                     for (cid, sl, S, auxdata) in tensor_msas: 
                         # filter bad MSAs (trivial or missing reference)
                         if cid < 0:

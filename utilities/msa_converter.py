@@ -762,9 +762,11 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
 
     refChr = refseqrec.id[dot+1:]
     refchrLen = refseqrec.annotations["size"]
+    refchrStart = refseqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
     if refchrLen < sl:
         return []
     #frame = refseqrec.annotations["frame"]
+    strand = refseqrec.annotations["strand"]
     refrow = str(refseqrec.seq)
     rownchars = len(refrow.replace('-', ''))
     if rownchars < refchrLen:
@@ -772,36 +774,133 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
         sys.exit(1)
 
     spec_in_file = []
-    seqname = []
-    strand = []
-    chrStart = []
-    for seqrec in msa: 
-        spec_id = seqrec.id.split('.', 1)  
-        spec_in_file.append(spec_id[0])  # species
-        seqname.append(spec_id[1:][0])  # sequence  name
-        strand.append(seqrec.annotations["strand"])  # strand
-        chrStart.append(seqrec.annotations["start"]+1)  # start pos of sequence, +1 bc 0-based in MAF, here 1-based for GFF comp.
+    #seqname = []
+    #strand = []
+    #chrStart = []
+    for seqrec in msa: spec_in_file.append(seqrec.id.split('.', 1)[0])
+    #    spec_id = seqrec.id.split('.', 1)  
+    #    spec_in_file.append(spec_id[0])  # species
+    #    seqname.append(spec_id[1:][0])  # sequence  name
+    #    strand.append(seqrec.annotations["strand"])  # strand
+    #    chrStart.append(seqrec.annotations["start"]+1)  # start pos of sequence, +1 bc 0-based in MAF, here 1-based for GFF comp.
     
-    orig_strand = [s == 1 for s in strand]  # plus strand or not
-    reverse_strand = [not s for s in orig_strand]  # plus strand or not for reverse complement
-
-    ebony_pos = int(sl/2) # pos of boundary in window
+    #orig_strand = [s == 1 for s in strand]  # plus strand or not
+    #reverse_strand = [not s for s in orig_strand]  # plus strand or not for reverse complement
+ 
+    #ebony_pos = int(sl/2) # pos of boundary in window
     alilen = len(refrow)  # alignment length
     msalst = []
+    num_gaps = 0
     for i in range(alilen - sl + 1):
         window = msa[:,i:i+sl]
-        chrPos = [(start+ebony_pos-1+i, start+ebony_pos+i) for start in chrStart] # tuple encases boundary
+        chrPos = refchrStart + i - num_gaps  # adjust pos in refChr
+        if window[0].seq[0] == '-': num_gaps +=1  # for next window
         for i in (1, -1):
-            plus_strand = orig_strand
+            plus_strand = (strand == 1)
             if i == -1:
-                plus_strand = reverse_strand
+                plus_strand = not plus_strand
                 for rec in window:
                     rec.seq = rec.seq.reverse_complement()
 
-            msalst.append({"seqs" : [str(rec.seq) for rec in window], "species" : spec_in_file,
-                "frame" : 0, # not used
+            msalst.append({"seqs" : [str(rec.seq) for rec in window],
+                "species": spec_in_file,
+                "frame" : 0,
                 "plus_strand" : plus_strand,
-                "seqname" : seqname, "chrPos" : chrPos})
+                "seqname" : refChr, 
+                "chrPos" : chrPos, 
+                "alilen": sl})  
+                ############## adjust chrPos
+
+    return msalst
+
+def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
+    """
+    """
+    refseqrec = msa[0] # the first sequence is the reference
+    dot = refseqrec.id.find('.')
+    if dot < 0:
+        raise AssertionError("MAF record does not contain a dot - to separate species and seq name")
+
+    refChr = refseqrec.id[dot+1:]
+    refchrLen = refseqrec.annotations["size"]
+    refchrStart = refseqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
+    if refchrLen < sl:
+        return []
+    strand = refseqrec.annotations["strand"]
+    refrow = str(refseqrec.seq)
+    alilen = len(refrow)
+    rownchars = len(refrow.replace('-', ''))
+    if rownchars < refchrLen:
+        print (f"MAF format error: character number in alignment row ({rownchars}) smaller than annotated ({refchrLen})")
+        sys.exit(1)
+
+    spec_in_file = []
+    for seqrec in msa: spec_in_file.append(seqrec.id.split('.', 1)[0])
+
+
+    def get_coords(bound_type, ind):
+        # returns msa start, msa stop, boundary signal start, boundary signal stop
+        if bound_type == 'dss':
+            return [int(ind - sl/2), int(ind - 1 + sl/2), ind, ind]
+        if bound_type == 'ass':
+            return [int(ind + 2 - sl/2), int(ind + 1 + sl/2), ind + 1, ind + 1]
+        if bound_type == 'start':
+            return [int(ind - sl/2), int(ind - 1 + sl/2), ind, ind + 2]
+        # bound_type == 'stop'
+        return [int(ind + 3 - sl/2), int(ind + 2 + sl/2), ind, ind + 2]
+
+    def mirror(pos):
+        # mirror ind in pos around value
+        mirrored = []
+        mirror_value = (alilen - 1) / 2
+        for coord in pos:
+            mirrored.append(int(coord + 2 * (mirror_value - coord)))
+        return mirrored
+    
+    # exon boundary patterns
+    bounds = {'dss': re.compile(r'g[ct]', re.IGNORECASE),  # donor ss gc, gt
+              'ass': re.compile(r'ag', re.IGNORECASE),  # acceptor ss ag
+              'start': re.compile(r'atg', re.IGNORECASE),  # start codon atg
+              'stop': re.compile(r'ta[ag]|tga', re.IGNORECASE)  # stop codon taa, tag, tga
+    }
+
+
+    rev_refrow = str(refseqrec.seq.reverse_complement())
+    msalst = []
+    for i in (1, -1):  # -1 for reverse complement
+        seq = refrow
+        if i == -1:
+            seq = rev_refrow
+
+        # search ref seq for exon boundary patterns
+        for pattern in bounds:
+            for match in re.finditer(bounds[pattern], seq):
+                # get coords of msa and for hint
+                msa_coord1, msa_coord2, hint_coord1, hint_coord2 = get_coords(pattern, match.start())
+                if i == -1: 
+                    # mirror reverse complement coords to get coords in alignment
+                    msa_coord2, msa_coord1, hint_coord2, hint_coord1 = mirror([msa_coord1, msa_coord2, hint_coord1, hint_coord2])
+
+                if msa_coord1 < 0 or msa_coord2 >= alilen: 
+                    # coordinates out of alignment bounds
+                    continue
+
+                # maybe score consensus at boundary pattern??
+                # get msa
+                window = msa[:, msa_coord1:msa_coord2+1]
+                if i == -1:
+                    for rec in window: rec.seq = rec.seq.reverse_complement()
+
+                num_gaps = refrow.count('-', 0, int(hint_coord1))  # count gaps in refrow to adjust hint coords
+                plus_strand = (strand == 1 and i == 1) or (strand != 1 and i != 1)
+
+                msalst.append({"seqs" : [str(rec.seq) for rec in window],
+                               "species": spec_in_file,
+                               "frame" : 0,
+                               "plus_strand" : plus_strand,
+                               "seqname" : refChr,
+                               "type" : pattern, 
+                               "coords" : (refchrStart + hint_coord1 - num_gaps, refchrStart + hint_coord2  - num_gaps)})
 
     return msalst
 
@@ -812,7 +911,7 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
 def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positions = None, 
                    trans_dict=None, remove_stop_rows=False, use_amino_acids = False,
                    tuple_length = 1, tuples_overlap = False, frame_align_codons = True,
-                   sliding_window = False):
+                   sliding_window = False, ebony = False):
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
@@ -832,10 +931,13 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
         if sliding_window:
             sl = num_positions + tuple_length - 1
             seq_msas = get_window_seqs(text_MSA, sl)
+        elif ebony:
+            sl = num_positions + tuple_length - 1
+            seq_msas = get_ebony_seqs(text_MSA, sl)
         else:
             seq_msas = get_Bio_seqs(text_MSA)
     else:
-        raise TypeError("parse_fasta_file: text_MSA must be either a string or a MultipleSeqAlignment")
+        raise TypeError("parse_text_MSA: text_MSA must be either a string or a MultipleSeqAlignment")
     
     if not seq_msas: # empty seq list
         return [(-1, 0, None, {})]
@@ -848,15 +950,23 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
         frame = seq_msa["frame"]
         plus_strand = seq_msa["plus_strand"]
         auxdata = None
-        if "seqname" in seq_msa: # for BioPython MSAs from MAF
+        if "numSites" in seq_msa: # sitewise prediction
             auxdata = {"seqname" : seq_msa["seqname"],
                        "chrPos" : seq_msa["chrPos"],
-                       "plus_strand" : seq_msa["plus_strand"]}
-            if "numSites" in seq_msa: # sitewise prediction
-                auxdata["numSites"] = seq_msa["numSites"]
-            else: # sliding window prediction
-                auxdata["species"] = spec_in_file 
-        if "fasta_path" in seq_msa: # for FASTA files
+                       "plus_strand" : seq_msa["plus_strand"],
+                       "numSites" : seq_msa["numSites"]}
+        elif "type" in seq_msa:  # ebony prediction
+            auxdata = {"seqname" : seq_msa["seqname"],
+                       "plus_strand" : seq_msa["plus_strand"],
+                       "type" : seq_msa["type"],
+                       "coords" : seq_msa["coords"]}
+        elif "alilen" in seq_msa: # sliding window prediction
+            auxdata = {"seqname" : seq_msa["seqname"],
+                       "chrPos" : seq_msa["chrPos"],
+                       "plus_strand" : seq_msa["plus_strand"],
+                       "refrow" : sequences[0],
+                       "alilen" : seq_msa["alilen"]}
+        elif "fasta_path" in seq_msa: # for FASTA files
             auxdata = {"fasta_path" : seq_msa["fasta_path"]}
 
         clade_id, sequence_length, S = None, None, None
