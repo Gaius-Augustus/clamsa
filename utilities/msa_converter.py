@@ -405,7 +405,7 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1.,
             sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
             # decide whether the upcoming entry should be skipped
-            skip_entry = (model == 0 and random.random() > 1. / undersample_neg_by_factor) or (fixed_sequence_length and fixed_sequence_length != len(sequences[0]))
+            skip_entry = (label == 0 and random.random() > 1. / undersample_neg_by_factor) or (fixed_sequence_length and fixed_sequence_length != len(sequences[0]))
             if skip_entry:
                 fasta.close()
                 continue
@@ -856,6 +856,22 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
         for coord in pos:
             mirrored.append(int(coord + 2 * (mirror_value - coord)))
         return mirrored
+
+    def alignability(msa, pattern):
+        # relative number of non-gaps in potential coding region + boundary pattern
+        halfway = int(sl/2)
+        bound = {'dss': (0, halfway + 2),
+                'ass': (halfway - 2 , sl),
+                'start': (halfway, sl),
+                'stop': (0, halfway)}
+        gaps = 0
+        total = 0
+        for rec in msa[:, bound[pattern][0]:bound[pattern][1]]: 
+            seq = str(rec.seq)
+            gaps += seq.count('-')
+            total += len(seq)
+
+        return 1 - gaps / total
     
     # exon boundary patterns
     bounds = {'dss': re.compile(r'g[ct]', re.IGNORECASE),  # donor ss gc, gt
@@ -868,28 +884,28 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
     rev_refrow = str(refseqrec.seq.reverse_complement())
     msalst = []
     for i in (1, -1):  # -1 for reverse complement
-        seq = refrow
-        if i == -1:
-            seq = rev_refrow
+        seq = refrow if i == 1 else rev_refrow
 
         # search ref seq for exon boundary patterns
         for pattern in bounds:
             for match in re.finditer(bounds[pattern], seq):
                 # get coords of msa and for hint
                 msa_coord1, msa_coord2, hint_coord1, hint_coord2 = get_coords(pattern, match.start())
-                if i == -1: 
-                    # mirror reverse complement coords to get coords in alignment
-                    msa_coord2, msa_coord1, hint_coord2, hint_coord1 = mirror([msa_coord1, msa_coord2, hint_coord1, hint_coord2])
-
-                if msa_coord1 < 0 or msa_coord2 >= alilen: 
-                    # coordinates out of alignment bounds
-                    continue
+                
+                # mirror reverse complement coords to get coords in alignment
+                if i == -1:  msa_coord2, msa_coord1, hint_coord2, hint_coord1 = mirror([msa_coord1, msa_coord2, hint_coord1, hint_coord2])
+                
+                # coordinates out of alignment bounds
+                if msa_coord1 < 0 or msa_coord2 >= alilen: continue
 
                 # maybe score consensus at boundary pattern??
                 # get msa
                 window = msa[:, msa_coord1:msa_coord2+1]
                 if i == -1:
                     for rec in window: rec.seq = rec.seq.reverse_complement()
+
+                # relative number of non-gaps in potential coding region as rough measure for alignability/conservation
+                if alignability(window, pattern) < 0.8: continue
 
                 num_gaps = refrow.count('-', 0, int(hint_coord1))  # count gaps in refrow to adjust hint coords
                 plus_strand = (strand == 1 and i == 1) or (strand != 1 and i != 1)
