@@ -613,6 +613,14 @@ dm3.chr1 dmel''',
                             help='Predict sitewise classes (needs a trained sitewise classification model). Currently only works on fasta files',
                             action='store_true',
         )
+        parser.add_argument('--output_all_species',
+                            help='When input is in MAF format, output wiggle files for all species, not just the reference',
+                            action='store_true',
+        )
+        parser.add_argument('--logits',
+                            help='Wiggle output are logits (positiv and negative) rather than probabilities.',
+                            action='store_true',
+        )
 
         # ignore the initial args specifying the command
         args = parser.parse_args(sys.argv[2:])
@@ -671,7 +679,8 @@ dm3.chr1 dmel''',
                     log_dir = args.log_basedir, clades = args.clades,
                     paths = args.input, use_codons = args.use_codons,
                     tuple_length = args.tuple_length, batch_size = args.batch_size,
-                    trans_dict = trans_dict, remove_stop_rows = args.remove_stop_rows)
+                    trans_dict = trans_dict, remove_stop_rows = args.remove_stop_rows,
+                    output_all_species = args.output_all_species)
 
         elif args.in_type == 'tfrecord':
             if args.sitewise:
@@ -709,7 +718,9 @@ dm3.chr1 dmel''',
                 pickle_file.close()
             elif args.in_type == 'maf':
                 # write wig file
-                wg.write_preds_to_wig(preds, aux, args.out, logits=True)
+                wg.write_preds_to_wig(preds, aux, args.out,
+                                      output_all_species=args.output_all_species,
+                                      logits=args.logits)
             
         else:
             # construct a dataframe from the predictions

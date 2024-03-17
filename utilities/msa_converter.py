@@ -607,11 +607,134 @@ def get_fasta_seqs(fasta_path : str, use_amino_acids, margin_width = 0):
              "fasta_path" : fasta_path}]
 
 
-def get_Bio_seqs(msa : MultipleSeqAlignment):
-    """ Returns codon alignments for all frames uninterrupted in the reference
-    at least 6 codon alignments (3 frames x 2 strands), provided the input MSA is long enough 
+def get_Bio_seqs(msa : MultipleSeqAlignment, output_all_species = False):
+    """ Returns codon alignments for all frames uninterrupted in the reference"""
+    if output_all_species:
+        return get_Bio_seqs_all(msa)
+    else:
+        return get_Bio_seqs_ref(msa)
+
+def get_Bio_seqs_all(msa : MultipleSeqAlignment):
+    """ Returns 6 alignments of triplets (3 frames x 2 strands) guided only by alignment coordinates. Includes auxiliary data on sequence names and coordinates in all species.
     @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
-    @return List[str]: Sequences (= rows of MSA) in the fasta file
+    @return List[Biopython MSA]: includes sequences (= rows of MSA), species names and auxiliary data
+    """
+    species = []
+    chrs = []
+    chrStarts = []
+    fragLens = []
+    aliStrands = []
+    chrSizes = []
+    alilen = None
+
+    for seqrec in msa:
+        dot = seqrec.id.find('.')
+        if dot < 0:
+            raise AssertionError("MAF record does not contain a dot - to separate species and seq")
+        specie = seqrec.id[:dot]
+        chr = seqrec.id[dot+1:]
+        chrStart = seqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
+        fragLen = seqrec.annotations["size"]
+        chrSize = seqrec.annotations["srcSize"]
+        aliStrand = seqrec.annotations["strand"] # +1 or -1
+        #print (f"seqrec.id={seqrec.id} chr={chr} chrStart={chrStart} ",
+        #    f"fragLen={fragLen} chrSize={chrSize}")
+        seqrec.seq = seqrec.seq.lower() # to a,c,g,t alphabet
+        if alilen is None:
+            alilen = len(seqrec.seq)
+
+        # minimal format check
+        rownchars = len((str(seqrec.seq)).replace('-', ''))
+        if rownchars != fragLen:
+            print (f"MAF format error in {seqrec.id}:\ncharacter number in alignment row ({rownchars}) not as claimed ({fragLen}). Offending MSA:\n", msa, "Ignoring this alignment...", file=sys.stderr)
+            return []
+        if alilen != len(seqrec.seq):
+            print (f"MAF format error: rows have different lengths ({alilen}, {len(seqrec.seq)})")
+            sys.exit(1)
+
+        species.append(specie)
+        chrs.append(chr)
+        chrStarts.append(chrStart)
+        fragLens.append(fragLen)
+        aliStrands.append(aliStrand)
+        chrSizes.append(chrSize)
+
+    if alilen is None or alilen < 3:
+        return []
+
+    fragMSAs = []
+
+    def appendMSA(outMSA, frame, strand, offsets):
+        """ append the MSA to the list of fragment MSAs"""
+        if outMSA is not None and outMSA.get_alignment_length() > 0:
+            outMSA.annotations["local_frame"] = frame # frame in the fragment, currently not used
+            outMSA.annotations["strand"] = strand
+            outMSA.annotations["offsets"] = offsets
+            # gaps need not come int triples, as this is no in-frame codon alignment
+            #for seqrec in outMSA:
+            #    for i in range(0, len(seqrec.seq), 3):
+            #        print (seqrec.seq[i:i+3], end=" ")
+            #print()
+            fragMSAs.append(outMSA) #(sequences, spec_in_file, frame, plus_strand)
+
+    for strand in (1, -1):
+        for frame in range(3):
+            #print (f"frame={frame} strand={strand}")
+            outMSA = None
+            for alipos in range(frame, alilen - 2, 3):
+                # cut out the codon from msa
+                msa1codon = msa[:,alipos:alipos+3]
+                for seqrec in msa1codon:
+                    if strand == -1:
+                        " reverse complement the single codon alignment "
+                        seqrec.seq = seqrec.seq.reverse_complement()
+                if outMSA is None:
+                    outMSA = msa1codon
+                else:
+                    outMSA += msa1codon
+            # compute frame offsets
+            offsets = []
+            for i in range(len(chrStarts)):
+                # count the number of non-gaps until the frame starts
+                offsets.append(frame - str(msa[i].seq).count('-', 0, frame))
+            #print (outMSA, f"\nframe {frame} offsets={offsets}")
+            appendMSA(outMSA, frame, strand, offsets)
+
+    # construct return list
+    msalst = []
+    for j, msa in enumerate(fragMSAs):
+        sequences = []
+        for i, seqrec in enumerate(msa):
+            sequences.append(str(seqrec.seq))
+
+        numSites = msa.get_alignment_length()
+        if numSites % 3 != 0:
+            print (f"Error: number of sites ({numSites}) not divisible by 3:", msa)
+        numSites = int(numSites / 3) # codon columns
+        codon_strand = msa.annotations["strand"] # +1 or -1, as used by ClaMSA
+        msalst.append({"seqs" : sequences,
+                       "species" : species,
+                       "frame" : 0, # given to clamsa: start codon right at start of MSA
+                       "codon_strand" : codon_strand,
+                       "numSites" : numSites,
+                       # specific keys for output_all_species follow
+                       "local_frame" : msa.annotations["local_frame"],
+                       "chrs" : chrs,
+                       "chrStarts" : chrStarts,
+                       "offsets" : msa.annotations["offsets"],
+                       "fragLens" : fragLens,
+                       "aliStrands" : aliStrands,
+                       "chrSizes" : chrSizes})
+        # print (f"\nfragment {j}:", msa,
+        #       f"\nf={msa.annotations['local_frame']} strand={msa.annotations['strand']}", chrPos, # len(sequences[0]))
+    return msalst
+
+
+def get_Bio_seqs_ref(msa : MultipleSeqAlignment):
+    """ Returns codon alignments for all frames uninterrupted in the reference.
+    6 codon alignments (3 frames x 2 strands) for each ungapped chunk in the reference, provided the input MSA is long enough.
+    @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
+    @return List[str]: Sequences (= rows of MSA)
             List[str]: Species names for each row
     """
     
@@ -622,7 +745,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
 
     refChr = refseqrec.id[dot+1:]
     refchrStart = refseqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
-    refchrLen = refseqrec.annotations["size"]
+    refchrLen = refseqrec.annotations["size"] # lenght of aligned fragment of reference seq
     refrow = str(refseqrec.seq)
     rownchars = len(refrow.replace('-', ''))
     if rownchars < refchrLen:
@@ -648,7 +771,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
     def right_move(alipos, by=3):
         """ right-move 'by' positions from alipos, return the new position as well as the number of gaps encountered. alipos is assumed to point to a non-gap and will point to a non-gap after.
         """
-        gapsWithin = gapsAfter = 0
+        gapsWithin = 0
         while by > 0 and alipos < alilen:
             alipos += 1
             by -= 1
@@ -656,10 +779,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
                 alipos += 1
                 if by > 0:
                     gapsWithin += 1
-                else:
-                    gapsAfter += 1
-
-        return alipos, gapsWithin, gapsAfter
+        return alipos, gapsWithin
 
     def appendMSA(outMSA, frame, strand, chrAliStart):
         """ append the MSA to the list of fragment MSAs"""
@@ -667,7 +787,7 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
             outMSA.annotations["local_frame"] = frame # frame in the fragment, currently not used
             outMSA.annotations["strand"] = strand
             outMSA.annotations["startPos"] = chrAliStart
-            fragMSAs.append(outMSA) #(sequences, spec_in_file, frame, plus_strand)
+            fragMSAs.append(outMSA) #(sequences, spec_in_file, frame, codon_strand)
 
     for strand in (1, -1):
         for frame in range(3):
@@ -676,13 +796,13 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
             # read over gaps at the beginning of the reference row
             while refrow[alipos] == '-' and alipos < alilen:
                 alipos += 1
-            alipos, gapsWithin, gapsAfter = right_move(0, frame)
+            alipos, gapsWithin = right_move(0, frame)
             i = frame
             outMSA = None
             chrAliStart = refchrStart + i
             outalilen = 0
             while alipos < alilen:
-                nextalipos, gapsWithin, gapsAfter = right_move(alipos)
+                nextalipos, gapsWithin = right_move(alipos)
                 # throw away codons that are interrupted by gaps
                 if gapsWithin == 0 and nextalipos >= alipos + 3:
                     # cut out the codon from msa
@@ -718,12 +838,16 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
         if numSites % 3 != 0:
             print (f"Error: number of sites ({numSites}) not divisible by 3:", msa)
         numSites = int(numSites / 3) # codon columns
-        plus_strand = (msa.annotations["strand"] == 1)
+        codon_strand = (msa.annotations["strand"] == 1) # +1 or -1, as used by ClaMSA
         chrPos = msa.annotations["startPos"]
-        msalst.append({"seqs" : sequences, "species" : spec_in_file,
-             "frame" : 0, # given to clamsa: start codon right at start of MSA
-             "plus_strand" : plus_strand,
-             "seqname" : refChr, "chrPos" : chrPos, "numSites" : numSites})
+        msalst.append({"seqs" : sequences,
+                       "species" : spec_in_file,
+                       "frame" : 0, # given to clamsa: start codon right at start of MSA
+                       "codon_strand" : codon_strand, # codon strand
+                       "numSites" : numSites,
+                       # specific keys for ref-based MSAs follow
+                       "seqname" : refChr,
+                       "chrPos" : chrPos})
         # print (f"\nfragment {j}:", msa,
         #       f"\nf={msa.annotations['local_frame']} strand={msa.annotations['strand']}", chrPos, # len(sequences[0]))
 
@@ -736,7 +860,8 @@ def get_Bio_seqs(msa : MultipleSeqAlignment):
 # we generate for phylocsf.
 def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
                    trans_dict=None, remove_stop_rows=False,
-                   use_amino_acids = False, tuple_length = 1, frame_align_codons = True):
+                   use_amino_acids = False, tuple_length = 1, frame_align_codons = True, 
+                   output_all_species = False):
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
@@ -753,7 +878,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         seq_msas = get_fasta_seqs(text_MSA, use_amino_acids, margin_width)
     elif isinstance(text_MSA, MultipleSeqAlignment):
          # extract multiple MSAs from a MultipleSeqAlignment object
-        seq_msas = get_Bio_seqs(text_MSA)
+        seq_msas = get_Bio_seqs(text_MSA, output_all_species)
     else:
         raise TypeError("parse_fasta_file: text_MSA must be either a string or a MultipleSeqAlignment")
 
@@ -763,13 +888,24 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         sequences = seq_msa["seqs"]
         spec_in_file = seq_msa["species"]
         frame = seq_msa["frame"]
-        plus_strand = seq_msa["plus_strand"]
         auxdata = None
-        if "seqname" in seq_msa: # for BioPython MSAs from MAF
+        if "seqname" in seq_msa and not output_all_species : # for BioPython MSAs from MAF
             auxdata = {"seqname" : seq_msa["seqname"],
                        "chrPos" : seq_msa["chrPos"],
                        "numSites" : seq_msa["numSites"],
-                       "plus_strand" : seq_msa["plus_strand"]}
+                       "codon_strand" : seq_msa["codon_strand"]}
+        if "seqs" in seq_msa and output_all_species: # for BioPython MSAs from MAF
+            auxdata = {"seqs" : seq_msa["seqs"],
+                       "species" : seq_msa["species"],
+                       "codon_strand" : seq_msa["codon_strand"],
+                       "numSites" : seq_msa["numSites"],
+                       "chrs" : seq_msa["chrs"],
+                       "chrStarts" : seq_msa["chrStarts"],
+                       "offsets" : seq_msa["offsets"],
+                       "fragLens" : seq_msa["fragLens"],
+                       "aliStrands" : seq_msa["aliStrands"],
+                       "chrSizes" : seq_msa["chrSizes"]}
+
         if "fasta_path" in seq_msa: # for FASTA files
             auxdata = {"fasta_path" : seq_msa["fasta_path"]}
 
@@ -815,8 +951,8 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
         if len(msa.sequences) < 2: # no alignment left
             continue
 
-        #print ("codon MSA")
-        #for cs in msa.codon_aligned_sequences:
+        # print ("codon MSA")
+        # for cs in msa.codon_aligned_sequences:
         #    print (cs)
         sequence_length = len(coded_sequences[0])
         if sequence_length != auxdata["numSites"]:

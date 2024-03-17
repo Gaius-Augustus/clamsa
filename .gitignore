@@ -8,3 +8,6 @@ experiments/saved_weights/
 experiments/*.log
 experiments/*.sh
 experiments/*.pdf
+*.wig
+*.gz
+utilities/*.maf
