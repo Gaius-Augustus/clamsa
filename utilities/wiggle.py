@@ -1,4 +1,3 @@
-from grpc import compute_engine_channel_credentials
 from more_itertools import last
 import numpy as np
 from contextlib import ExitStack
