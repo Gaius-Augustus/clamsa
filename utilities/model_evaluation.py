@@ -525,7 +525,7 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
     #msa_id = 0
     
     def sequence_generator():
-         # conditionally open a .maf or .maf.gz file for input
+        # conditionally open a .maf or .maf.gz file for input
         for maffile in paths:
             opener = open # for regular text files
             if '.gz' in Path(maffile).suffixes:
