@@ -16,9 +16,8 @@ def create_model(forest,
                  sparse_rates = False,
                  frames_as_feature = False,
                  gaps_as_feature = False,
-                 sequence_dense_dimension = 16,
-                 dense1_dimension = 0,
-                 dense2_dimension = 0,
+                 sequence_dense_dimension = 32,
+                 dense_dimension = 16,
                  name = "clamsa_ebony",
                  num_classes = 2):
 
@@ -37,8 +36,7 @@ def create_model(forest,
     log_layer = tf.keras.layers.Lambda(tf.math.log, name="log_P", dtype=tf.float64)
     reshape_layer = ReshapeBatch(num_positions, name = "reshape") # reshape to (batch_size, tcmc_models * num_positions)
     #mean_log_layer = tf.keras.layers.Lambda(lambda x: - tf.math.reduce_mean(x, axis=-1), name="neg_mean_log", dtype=tf.float64)  # for LL loss
-    sequence_dense_layer = tf.keras.layers.Dense(sequence_dense_dimension, kernel_initializer = "TruncatedNormal", activation = "sigmoid", name="sequence_dense", dtype=tf.float64) \
-        if sequence_dense_dimension > 0 else None
+    sequence_dense_layer = tf.keras.layers.Dense(sequence_dense_dimension, kernel_initializer = "TruncatedNormal", activation = "sigmoid", name="sequence_dense", dtype=tf.float64)
 
     concat_layer = None
 
@@ -54,10 +52,8 @@ def create_model(forest,
         if concat_layer == None:
             concat_layer = tf.keras.layers.Concatenate(name = "sequence_and_features")
     
-    dense1_layer = tf.keras.layers.Dense(dense1_dimension, kernel_initializer = "TruncatedNormal", activation = "sigmoid", name="dense1", dtype=tf.float64) \
-        if dense1_dimension > 0 else None
-    dense2_layer = tf.keras.layers.Dense(dense2_dimension, kernel_initializer = "TruncatedNormal", activation = "sigmoid", name="dense2", dtype=tf.float64) \
-        if dense2_dimension > 0 else None
+    dense_layer = tf.keras.layers.Dense(dense_dimension, kernel_initializer = "TruncatedNormal", activation = "sigmoid", name="dense", dtype=tf.float64) \
+        if dense_dimension > 0 else None
 
     guesses_layer = tf.keras.layers.Dense(num_classes, kernel_initializer = "TruncatedNormal", activation = "softmax", name = "guesses", dtype=tf.float64)
 
@@ -67,8 +63,7 @@ def create_model(forest,
     log_P = log_layer(P)
     X = reshape_layer(log_P)
     #LL = mean_log_layer(X)
-    if sequence_dense_layer != None:
-        X = sequence_dense_layer(X)
+    X = sequence_dense_layer(X)
 
     if gaps_as_feature:
         encoded_gaps = gap_encoding_layer(sequences)
@@ -83,10 +78,8 @@ def create_model(forest,
         frame_dense = frame_dense_layer(frame_mean)
         X = concat_layer([X, frame_dense])
 
-    if dense1_layer != None:
-        X = dense1_layer(X)
-    if dense2_layer != None:
-        X = dense2_layer(X)
+    if dense_layer != None:
+        X = dense_layer(X)
 
     guesses = guesses_layer(X)
     
@@ -127,11 +120,12 @@ class NegativeLogLikelihood(tf.keras.layers.Layer):
     def call(self, inputs, training = None):
         P = tf.reshape(inputs, (-1, self.k * self.M))
         loglikelihood = - tf.math.reduce_mean(P, axis=-1) 
-        
+
         return loglikelihood 
 
     def get_config(self):
         base_config = super(NegativeLogLikelihood, self).get_config()
+        base_config['k'] = self.k
         return base_config
 
     @classmethod
@@ -157,6 +151,7 @@ class ReshapeBatch(tf.keras.layers.Layer):
 
     def get_config(self):
         base_config = super(ReshapeBatch, self).get_config()
+        base_config['k'] = self.k
         return base_config
 
     @classmethod
@@ -167,6 +162,7 @@ class FrameLogLikelihood(tf.keras.layers.Layer):
     """Mean loglikelihood of each frame on each side of the boundary"""
     def __init__(self, s, k, **kwargs):
         self.k = k
+        self.s = s
 
         # get tuple length
         if s in [4,20]:
@@ -223,6 +219,8 @@ class FrameLogLikelihood(tf.keras.layers.Layer):
 
     def get_config(self):
         base_config = super(FrameLogLikelihood, self).get_config()
+        base_config['k'] = self.k
+        base_config['s'] = self.s
         return base_config
 
     @classmethod
@@ -273,6 +271,7 @@ class Encode(tf.keras.layers.Layer):
 
     def get_config(self):
         base_config = super(Encode, self).get_config()
+        base_config['new_size'] = self.new_size
         return base_config
 
     @classmethod
