@@ -66,8 +66,9 @@ def create_model(forest,
 
     guesses = guesses_layer(X)
 
+    #model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = mean_log_P, name = name)
     model = tf.keras.Model(inputs = [sequences, clade_ids, sequence_lengths], outputs = guesses, name = name)
-
+    print("70: ", mean_log_P)
     return model
 
 
@@ -87,7 +88,7 @@ def training_callbacks(model, logdir, wanted_callbacks):
     gen_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=log_gen)
 
     return [aa_callback, gen_callback]
-
+    
 class SequenceLogLikelihood(tf.keras.layers.Layer):
     """From variable-length sequence to single number: mean log likelihood"""
     def __init__(self, **kwargs):
@@ -106,7 +107,7 @@ class SequenceLogLikelihood(tf.keras.layers.Layer):
         log_P = tf.math.log(P)
         loglikelihood = - tf.math.segment_mean(log_P, seq_ids) # lengths tf.dtypes.cast(sl, tf.float64)
 
- 
+        print("loglik : ",loglikelihood)
         return loglikelihood
 
     def get_config(self):
