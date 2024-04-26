@@ -777,7 +777,9 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
     #seqname = []
     #strand = []
     #chrStart = []
-    for seqrec in msa: spec_in_file.append(seqrec.id.split('.', 1)[0])
+    for seqrec in msa: 
+        spec_in_file.append(seqrec.id.split('.', 1)[0])
+        seqrec.seq = seqrec.seq.lower()
     #    spec_id = seqrec.id.split('.', 1)  
     #    spec_in_file.append(spec_id[0])  # species
     #    seqname.append(spec_id[1:][0])  # sequence  name
@@ -809,7 +811,6 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
                 "seqname" : refChr, 
                 "chrPos" : chrPos, 
                 "alilen": sl})  
-                ############## adjust chrPos
 
     return msalst
 
@@ -827,7 +828,7 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
     if refchrLen < sl:
         return []
     strand = refseqrec.annotations["strand"]
-    refrow = str(refseqrec.seq)
+    refrow = str(refseqrec.seq.lower())
     alilen = len(refrow)
     rownchars = len(refrow.replace('-', ''))
     if rownchars < refchrLen:
@@ -835,7 +836,9 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
         sys.exit(1)
 
     spec_in_file = []
-    for seqrec in msa: spec_in_file.append(seqrec.id.split('.', 1)[0])
+    for seqrec in msa: 
+        spec_in_file.append(seqrec.id.split('.', 1)[0])
+        seqrec.seq = seqrec.seq.lower()
 
 
     def get_coords(bound_type, ind):
@@ -844,10 +847,11 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
             return [int(ind - sl/2), int(ind - 1 + sl/2), ind, ind]
         if bound_type == 'ass':
             return [int(ind + 2 - sl/2), int(ind + 1 + sl/2), ind + 1, ind + 1]
-        if bound_type == 'start':
+        if bound_type == 'start_codon':
             return [int(ind - sl/2), int(ind - 1 + sl/2), ind, ind + 2]
-        # bound_type == 'stop'
-        return [int(ind + 3 - sl/2), int(ind + 2 + sl/2), ind, ind + 2]
+        if bound_type == 'stop_codon':
+            return [int(ind + 3 - sl/2), int(ind + 2 + sl/2), ind, ind + 2]
+        return [-1,-1,-1,-1]
 
     def mirror(pos):
         # mirror ind in pos around value
@@ -862,8 +866,8 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
         halfway = int(sl/2)
         bound = {'dss': (0, halfway + 2),
                 'ass': (halfway - 2 , sl),
-                'start': (halfway, sl),
-                'stop': (0, halfway)}
+                'start_codon': (halfway, sl),
+                'stop_codon': (0, halfway)}
         gaps = 0
         total = 0
         for rec in msa[:, bound[pattern][0]:bound[pattern][1]]: 
@@ -874,21 +878,21 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
         return 1 - gaps / total
     
     # exon boundary patterns
-    bounds = {'dss': re.compile(r'g[ct]', re.IGNORECASE),  # donor ss gc, gt
-              'ass': re.compile(r'ag', re.IGNORECASE),  # acceptor ss ag
-              'start': re.compile(r'atg', re.IGNORECASE),  # start codon atg
-              'stop': re.compile(r'ta[ag]|tga', re.IGNORECASE)  # stop codon taa, tag, tga
+    bounds = {'dss': re.compile(r'g[ct]'),  # donor ss gc, gt
+              'ass': re.compile(r'ag'),  # acceptor ss ag
+              'start_codon': re.compile(r'atg'),  # start codon atg
+              'stop_codon': re.compile(r'ta[ag]|tga')  # stop codon taa, tag, tga
     }
 
 
-    rev_refrow = str(refseqrec.seq.reverse_complement())
+    rev_refrow = str(refseqrec.seq.lower().reverse_complement())
     msalst = []
     for i in (1, -1):  # -1 for reverse complement
-        seq = refrow if i == 1 else rev_refrow
+        refseq = refrow if i == 1 else rev_refrow
 
         # search ref seq for exon boundary patterns
         for pattern in bounds:
-            for match in re.finditer(bounds[pattern], seq):
+            for match in re.finditer(bounds[pattern], refseq):
                 # get coords of msa and for hint
                 msa_coord1, msa_coord2, hint_coord1, hint_coord2 = get_coords(pattern, match.start())
                 
