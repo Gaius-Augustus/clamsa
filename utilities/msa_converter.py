@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import gzip
+from operator import is_
 import regex as re
 import random
 import numpy as np
 from Bio import SeqIO
+from Bio.Align import MultipleSeqAlignment
 import sys
 import math
 import numbers
@@ -15,6 +17,7 @@ import newick
 from collections import Counter
 import itertools
 import json
+import pathlib
 import zipfile
 import io
 import matplotlib.pyplot as plt
@@ -26,7 +29,8 @@ stop_codons = {"taa", "tag", "tga"}
 class MSA(object):
     def __init__(self, label = None, chromosome_id = None, start_index = None, end_index = None,
                  is_on_plus_strand = False, frame = 0, spec_ids = [], offsets = [], sequences = [], use_amino_acids = False, tuple_length = 1,
-                 fname = None, use_codons = False):
+                 fname = None, use_codons = False, is_codon_aligned = False,
+                 removeFinalStopColumn = True):
         self.label = label # label, class, e.g. y=1 for coding, y=0 for non-coding
         self.chromosome_id = chromosome_id
         self.start_index = start_index # chromosomal position
@@ -43,6 +47,9 @@ class MSA(object):
         self.tuple_length = tuple_length
         self.fname = fname
         self.use_codons = use_codons
+        self.is_codon_aligned = is_codon_aligned
+        self.removeFinalStopColumn = removeFinalStopColumn
+
     @property
     def coded_sequences(self, alphabet = "acgt"):
         if self.use_amino_acids:
@@ -86,7 +93,10 @@ class MSA(object):
             tbl = str.maketrans(alphabet, rev_alphabet)
             sequences = [s[::-1].translate(tbl) for s in sequences]
 
-        cali, self.in_frame_stops = tuple_alignment(sequences, gap_symbols, frame = self.frame, tuple_length = c)
+        if not self.is_codon_aligned:
+            cali, self.in_frame_stops = tuple_alignment(sequences, gap_symbols, frame = self.frame, tuple_length = c, removeFinalStopColumn = self.removeFinalStopColumn)
+        else:
+            cali = sequences
         return cali
 
     @property
@@ -147,7 +157,8 @@ class MSA(object):
 
 
 
-def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3):
+def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3,
+                    removeFinalStopColumn = True):
     """
     Align a list of string sequences to tuples of a fixed length with respect to a set of gap symbols.
 
@@ -223,9 +234,10 @@ def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3):
     ta_matrix = np.vectorize(entry_func)(np.arange(len(S))[:,None],np.arange(len(I)))
 
     # remove last column if it contains a stop codon (happens for single and terminal exons)
-    stops_in_lastcol = set(ta_matrix[:,-1]) & stop_codons
-    if stops_in_lastcol:
-        ta_matrix = ta_matrix[:, 0:-1]
+    if removeFinalStopColumn:
+        stops_in_lastcol = set(ta_matrix[:,-1]) & stop_codons
+        if stops_in_lastcol:
+            ta_matrix = ta_matrix[:, 0:-1]
 
     # check which rows contain an in-frame stop codon elsewhere
     stops = []
@@ -279,8 +291,9 @@ def leaf_order(path, use_alternatives=False):
 
         return matches
     
-def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_clades = None, margin_width = 0, tuple_length = 1, 
-                               use_amino_acids = False, use_codons = False, sitewise = False):
+def import_fasta_training_file(paths, undersample_neg_by_factor = 1.,
+                                reference_clades = None, margin_width = 0, tuple_length = 1,
+                                use_amino_acids = False, use_codons = False, sitewise = False):
     """ Imports the training files in fasta format.
     Args:
         paths (List[str]): Location of the file(s) 
@@ -308,9 +321,22 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
 
     """
 
+    def species_name(fasta_hdr):
+        """
+         extract the species name from the ">" line in fasta, e.g.
+        Homo_sapiens.chr17:63832|0,0,1,1,0 -> Homo_sapiens
+        Bos_taurus -> Bos_taurus
+        """
+        mafpatstr = r"(\w+)(?:\..*)?\|?"
+        m = re.match(mafpatstr, fasta_hdr)
+        if not m:
+           print ("FASTA header format not recognized. Perhaps special characters in",
+                  fasta_hdr)
+        return m.group(1)
+
     training_data = []
 
-    # If clades are specified the leave species will be imported.
+    # If clades are specified, the leaf species will be imported.
     species = [leaf_order(c) for c in reference_clades] if reference_clades != None else []
 
     # total number of bytes to be read
@@ -320,66 +346,82 @@ def import_fasta_training_file(paths, undersample_neg_by_factor = 1., reference_
     pbar = tqdm(total = total_bytes, desc = "Parsing FASTA file(s)", unit = 'b', unit_scale = True)
 
     for path in paths:
-        fasta = gzip.open(path, 'rt') if path.endswith('.gz') else open(path, 'r')            
-        bytes_read = fasta.tell()
-        entries = [rec for rec in SeqIO.parse(fasta, "fasta")]
+        fasta = gzip.open(path, 'rt') if path.endswith('.gz') else open(path, 'r')
+        bytes_read = fasta.tell() # byte reading progress (here 0)
+        # split a FASTA file with potentially multiple MSAs at the empty lines
+        while True:
+            if not fasta:
+                break
+            nextMSAsection = ""
+            while True:
+                line = fasta.readline()
+                if line == "\n" or not line:
+                    break
+                nextMSAsection += line
+            if nextMSAsection == "":
+                break
+            #print ("nextMSAsection=\n", nextMSAsection)
+            msa_io = io.StringIO(nextMSAsection)
 
-        # parse the species names
-        spec_in_file = [e.id.split('|')[0] for e in entries]
+            #entries = [rec for rec in SeqIO.parse(fasta, "fasta")]
+            entries = [rec for rec in SeqIO.parse(msa_io, "fasta")]
+            # parse the species names
+            spec_in_file = [species_name(e.id) for e in entries]
+            # parse the label
+            if sitewise:
+                # assume that the first record is from the references and contains the labels
+                label = entries[0].id.split('|')[-1]
+                label = list(map(float, label.split(",")))
+            else:
+                try:
+                    label = int(entries[0].id.split('|')[-1])
+                except ValueError:
+                    print ("Wrong format in FASTA header. Cannot extract integer class label from ",{entries[0].id}, file=sys.stderr)
+            # compare them with the given references
+            ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i]] for s in spec_in_file]
 
-        # parse the label
-        if sitewise:
-            label = entries[0].id.split('|')[-1]
-            label = list(map(float, label.split(",")))
-        else:
-            label = int(entries[0].id.split('|')[-1]) 
+            # check if these are contained in exactly one reference clade
+            n_refs = [len(x) for x in ref_ids]
 
-        # compare them with the given references
-        ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s in species[r][i]] for s in spec_in_file]
+            if 0 == min(n_refs) or max(n_refs) > 1:
+                continue
 
-        # check if these are contained in exactly one reference clade
-        n_refs = [len(x) for x in ref_ids]
+            ref_ids = [x[0] for x in ref_ids]
 
-        if 0 == min(n_refs) or max(n_refs) > 1:
-            continue
+            if len(set(r for (r,i) in ref_ids)) > 1:
+                continue
 
-        ref_ids = [x[0] for x in ref_ids]
+            # read the sequences and trim them if wanted
+            if not use_amino_acids:
+                sequences = [str(rec.seq).lower() for rec in entries]
+            else:
+                sequences = [str(rec.seq) for rec in entries]
+            sequences = sequences[margin_width:-margin_width] if margin_width > 0 else sequences
 
-        if len(set(r for (r,i) in ref_ids)) > 1:
-            continue
+            # decide whether the upcoming entry should be skipped
+            skip_entry = label == 0 and random.random() > 1. / undersample_neg_by_factor
+            if skip_entry:
+                fasta.close()
+                continue
 
-        # read the sequences and trim them if wanted        
-        if not use_amino_acids:
-            sequences = [str(rec.seq).lower() for rec in entries]
-        else:
-            sequences = [str(rec.seq) for rec in entries]
-        if margin_width > 0:
-            sequences = [row[margin_width:-margin_width] for row in sequences]
+            msa = MSA(
+                label = label,
+                chromosome_id = None,
+                start_index = None,
+                end_index = None,
+                is_on_plus_strand = True,
+                frame = 0,
+                spec_ids = ref_ids,
+                offsets = [],
+                sequences = sequences,
+                use_amino_acids = use_amino_acids,
+                tuple_length = tuple_length,
+                use_codons = use_codons
+            )
+            training_data.append(msa)
 
-        # decide whether the upcoming entry should be skipped
-        skip_entry = label == 0 and random.random() > 1. / undersample_neg_by_factor
-        if skip_entry:
-            fasta.close()
-            continue
-
-        msa = MSA(
-            label = label,
-            chromosome_id = None, 
-            start_index = None,
-            end_index = None,
-            is_on_plus_strand = True,
-            frame = 0,
-            spec_ids = ref_ids,
-            offsets = [],
-            sequences = sequences,
-            use_amino_acids = use_amino_acids,
-            tuple_length = tuple_length,
-            use_codons = use_codons
-        )        
-        training_data.append(msa)
-
-        pbar.update(fasta.tell() - bytes_read)
-        bytes_read = fasta.tell()
+            pbar.update(fasta.tell() - bytes_read)
+            bytes_read = fasta.tell()
         fasta.close()
 
     return training_data, species
@@ -560,17 +602,269 @@ def get_fasta_seqs(fasta_path : str, use_amino_acids, margin_width = 0):
             pass # leave frame at 0 by default
     plus_strand = True if len(header_fields) < 5 or header_fields[4] != 'revcomp' else False
 
-    return sequences, spec_in_file, frame, plus_strand
+    return [{"seqs" : sequences, "species" : spec_in_file,
+             "frame" : frame, "plus_strand" : plus_strand,
+             "fasta_path" : fasta_path}]
+
+
+def get_Bio_seqs(msa : MultipleSeqAlignment, output_all_species = False):
+    """ Returns codon alignments for all frames uninterrupted in the reference"""
+    if output_all_species:
+        return get_Bio_seqs_all(msa)
+    else:
+        return get_Bio_seqs_ref(msa)
+
+def get_Bio_seqs_all(msa : MultipleSeqAlignment):
+    """ Returns 6 alignments of triplets (3 frames x 2 strands) guided only by alignment coordinates. Includes auxiliary data on sequence names and coordinates in all species.
+    @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
+    @return List[Biopython MSA]: includes sequences (= rows of MSA), species names and auxiliary data
+    """
+    species = []
+    chrs = []
+    chrStarts = []
+    fragLens = []
+    aliStrands = []
+    chrSizes = []
+    alilen = None
+
+    for seqrec in msa:
+        dot = seqrec.id.find('.')
+        if dot < 0:
+            raise AssertionError("MAF record does not contain a dot - to separate species and seq")
+        specie = seqrec.id[:dot]
+        chr = seqrec.id[dot+1:]
+        chrStart = seqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
+        fragLen = seqrec.annotations["size"]
+        chrSize = seqrec.annotations["srcSize"]
+        aliStrand = seqrec.annotations["strand"] # +1 or -1
+        #print (f"seqrec.id={seqrec.id} chr={chr} chrStart={chrStart} ",
+        #    f"fragLen={fragLen} chrSize={chrSize}")
+        seqrec.seq = seqrec.seq.lower() # to a,c,g,t alphabet
+        if alilen is None:
+            alilen = len(seqrec.seq)
+
+        # minimal format check
+        rownchars = len((str(seqrec.seq)).replace('-', ''))
+        if rownchars != fragLen:
+            print (f"MAF format error in {seqrec.id}:\ncharacter number in alignment row ({rownchars}) not as claimed ({fragLen}). Offending MSA:\n", msa, "Ignoring this alignment...", file=sys.stderr)
+            return []
+        if alilen != len(seqrec.seq):
+            print (f"MAF format error: rows have different lengths ({alilen}, {len(seqrec.seq)})")
+            sys.exit(1)
+
+        species.append(specie)
+        chrs.append(chr)
+        chrStarts.append(chrStart)
+        fragLens.append(fragLen)
+        aliStrands.append(aliStrand)
+        chrSizes.append(chrSize)
+
+    if alilen is None or alilen < 3:
+        return []
+
+    fragMSAs = []
+
+    def appendMSA(outMSA, frame, strand, offsets):
+        """ append the MSA to the list of fragment MSAs"""
+        if outMSA is not None and outMSA.get_alignment_length() > 0:
+            outMSA.annotations["local_frame"] = frame # frame in the fragment, currently not used
+            outMSA.annotations["strand"] = strand
+            outMSA.annotations["offsets"] = offsets
+            # gaps need not come int triples, as this is no in-frame codon alignment
+            #for seqrec in outMSA:
+            #    for i in range(0, len(seqrec.seq), 3):
+            #        print (seqrec.seq[i:i+3], end=" ")
+            #print()
+            fragMSAs.append(outMSA) #(sequences, spec_in_file, frame, plus_strand)
+
+    for strand in (1, -1):
+        for frame in range(3):
+            #print (f"frame={frame} strand={strand}")
+            outMSA = None
+            for alipos in range(frame, alilen - 2, 3):
+                # cut out the codon from msa
+                msa1codon = msa[:,alipos:alipos+3]
+                for seqrec in msa1codon:
+                    if strand == -1:
+                        " reverse complement the single codon alignment "
+                        seqrec.seq = seqrec.seq.reverse_complement()
+                if outMSA is None:
+                    outMSA = msa1codon
+                else:
+                    outMSA += msa1codon
+            # compute frame offsets
+            offsets = []
+            for i in range(len(chrStarts)):
+                # count the number of non-gaps until the frame starts
+                offsets.append(frame - str(msa[i].seq).count('-', 0, frame))
+            #print (outMSA, f"\nframe {frame} offsets={offsets}")
+            appendMSA(outMSA, frame, strand, offsets)
+
+    # construct return list
+    msalst = []
+    for j, msa in enumerate(fragMSAs):
+        sequences = []
+        for i, seqrec in enumerate(msa):
+            sequences.append(str(seqrec.seq))
+
+        numSites = msa.get_alignment_length()
+        if numSites % 3 != 0:
+            print (f"Error: number of sites ({numSites}) not divisible by 3:", msa)
+        numSites = int(numSites / 3) # codon columns
+        codon_strand = msa.annotations["strand"] # +1 or -1, as used by ClaMSA
+        msalst.append({"seqs" : sequences,
+                       "species" : species,
+                       "frame" : 0, # given to clamsa: start codon right at start of MSA
+                       "codon_strand" : codon_strand,
+                       "numSites" : numSites,
+                       # specific keys for output_all_species follow
+                       "local_frame" : msa.annotations["local_frame"],
+                       "chrs" : chrs,
+                       "chrStarts" : chrStarts,
+                       "offsets" : msa.annotations["offsets"],
+                       "fragLens" : fragLens,
+                       "aliStrands" : aliStrands,
+                       "chrSizes" : chrSizes})
+        # print (f"\nfragment {j}:", msa,
+        #       f"\nf={msa.annotations['local_frame']} strand={msa.annotations['strand']}", chrPos, # len(sequences[0]))
+    return msalst
+
+
+def get_Bio_seqs_ref(msa : MultipleSeqAlignment):
+    """ Returns codon alignments for all frames uninterrupted in the reference.
+    6 codon alignments (3 frames x 2 strands) for each ungapped chunk in the reference, provided the input MSA is long enough.
+    @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
+    @return List[str]: Sequences (= rows of MSA)
+            List[str]: Species names for each row
+    """
+    
+    refseqrec = msa[0] # the first sequence is the reference
+    dot = refseqrec.id.find('.')
+    if dot < 0:
+        raise AssertionError("MAF record does not contain a dot - to separate species and seq name")
+
+    refChr = refseqrec.id[dot+1:]
+    refchrStart = refseqrec.annotations["start"] + 1 # 0-based in MAF, here 1-based for GFF comp.
+    refchrLen = refseqrec.annotations["size"] # lenght of aligned fragment of reference seq
+    refrow = str(refseqrec.seq)
+    rownchars = len(refrow.replace('-', ''))
+    if rownchars < refchrLen:
+        print (f"MAF format error: character number in alignment row ({rownchars}) smaller than annotated ({refchrLen})")
+        sys.exit(1)
+
+    for seqrec in msa: # remove the .chr from the species name
+        seqrec.id = seqrec.id.split('.', 1)[0]
+        seqrec.seq = seqrec.seq.lower() # to a,c,g,t alphabet
+
+    alilen = len(refrow)
+    fragMSAs = []
+ 
+    """
+    distinguish 3 types of coordinates:
+    chrPos in reference genome, alipos in MSA, i in reference row (no gaps)
+    chrPos = refchrStart + i
+    0  1  2  3  4  5  6  7  8  9 10 11 12 13  alipos - position in MSA coordinates
+         |        |             |             codon boundaries - here frame=1
+    -  C  A  T  G  -  -  T  G  G  A  T  G     reference row refrow (str)
+    0  1  2  3  4        5  6  7  8  9 10     i
+    """
+    def right_move(alipos, by=3):
+        """ right-move 'by' positions from alipos, return the new position as well as the number of gaps encountered. alipos is assumed to point to a non-gap and will point to a non-gap after.
+        """
+        gapsWithin = 0
+        while by > 0 and alipos < alilen:
+            alipos += 1
+            by -= 1
+            while alipos < alilen and refrow[alipos] == '-':
+                alipos += 1
+                if by > 0:
+                    gapsWithin += 1
+        return alipos, gapsWithin
+
+    def appendMSA(outMSA, frame, strand, chrAliStart):
+        """ append the MSA to the list of fragment MSAs"""
+        if outMSA is not None and outMSA.get_alignment_length() > 0:
+            outMSA.annotations["local_frame"] = frame # frame in the fragment, currently not used
+            outMSA.annotations["strand"] = strand
+            outMSA.annotations["startPos"] = chrAliStart
+            fragMSAs.append(outMSA) #(sequences, spec_in_file, frame, codon_strand)
+
+    for strand in (1, -1):
+        for frame in range(3):
+            # print (f"frame={frame} strand={strand}")
+            alipos = 0
+            # read over gaps at the beginning of the reference row
+            while refrow[alipos] == '-' and alipos < alilen:
+                alipos += 1
+            alipos, gapsWithin = right_move(0, frame)
+            i = frame
+            outMSA = None
+            chrAliStart = refchrStart + i
+            outalilen = 0
+            while alipos < alilen:
+                nextalipos, gapsWithin = right_move(alipos)
+                # throw away codons that are interrupted by gaps
+                if gapsWithin == 0 and nextalipos >= alipos + 3:
+                    # cut out the codon from msa
+                    msa1codon = msa[:,alipos:alipos+3]
+                    if strand == -1:
+                        " reverse complement the single codon alignment "
+                        for seqrec in msa1codon:
+                            seqrec.seq = seqrec.seq.reverse_complement()
+                    if outMSA is None:
+                        outMSA = msa1codon
+                        chrAliStart = refchrStart + i
+                    else:
+                        outMSA += msa1codon
+                    outalilen += 3
+                    # print (f"codon column chrAliStart={chrAliStart} i={i} alipos={alipos}", msa1codon)
+                else: # codon will not be scored, fragment ends
+                    appendMSA(outMSA, frame, strand, chrAliStart)
+                    outMSA = None
+
+                alipos = nextalipos
+                i += 3 # next codon in the same frame
+            appendMSA(outMSA, frame, strand, chrAliStart)
+    
+    # construct return list
+    msalst = []
+    for j, msa in enumerate(fragMSAs):
+        sequences = []
+        spec_in_file = []
+        for seqrec in msa:
+            sequences.append(str(seqrec.seq))
+            spec_in_file.append(seqrec.id)
+        numSites = msa.get_alignment_length()
+        if numSites % 3 != 0:
+            print (f"Error: number of sites ({numSites}) not divisible by 3:", msa)
+        numSites = int(numSites / 3) # codon columns
+        codon_strand = (msa.annotations["strand"] == 1) # +1 or -1, as used by ClaMSA
+        chrPos = msa.annotations["startPos"]
+        msalst.append({"seqs" : sequences,
+                       "species" : spec_in_file,
+                       "frame" : 0, # given to clamsa: start codon right at start of MSA
+                       "codon_strand" : codon_strand, # codon strand
+                       "numSites" : numSites,
+                       # specific keys for ref-based MSAs follow
+                       "seqname" : refChr,
+                       "chrPos" : chrPos})
+        # print (f"\nfragment {j}:", msa,
+        #       f"\nf={msa.annotations['local_frame']} strand={msa.annotations['strand']}", chrPos, # len(sequences[0]))
+
+    return msalst
+
 
 # Part of this logic also resides inside `import_fasta` and `import_phylocsf`
 #
 # This function is currently just written for the particular fasta header format
 # we generate for phylocsf.
-def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_dict=None, remove_stop_rows=False, use_amino_acids = False, tuple_length = 1):
+def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0,
+                   trans_dict=None, remove_stop_rows=False,
+                   use_amino_acids = False, tuple_length = 1, frame_align_codons = True, 
+                   output_all_species = False):
     """
        trans_dict   dictionary for translating names used in FASTA headers to taxon ids from the trees (clades)
     """
-
     tuple_length = 3 if use_codons else tuple_length
 
     trans_dict = {} if trans_dict is None else trans_dict
@@ -579,79 +873,120 @@ def parse_fasta_file(fasta_path, clades, use_codons=True, margin_width=0, trans_
     else:
         species = [leaf_order(c,use_alternatives=True) for c in clades] if clades != None else []
 
-    sequences, spec_in_file, frame, plus_strand \
-        = get_fasta_seqs(fasta_path, use_amino_acids, margin_width)
+    if isinstance(text_MSA, str): 
+        # extract a single MSA from a FASTA formatted file
+        seq_msas = get_fasta_seqs(text_MSA, use_amino_acids, margin_width)
+    elif isinstance(text_MSA, MultipleSeqAlignment):
+         # extract multiple MSAs from a MultipleSeqAlignment object
+        seq_msas = get_Bio_seqs(text_MSA, output_all_species)
+    else:
+        raise TypeError("parse_fasta_file: text_MSA must be either a string or a MultipleSeqAlignment")
 
-    # translate species name from file to taxon ids
-    translator = lambda s : trans_dict[s] if s in trans_dict else s
-    msa_taxon_ids = list(map(translator, spec_in_file))
-  
-    # compare them with the given references
-    ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s == species[r][i] ] for s in msa_taxon_ids]
+    tensor_msas = [] # list of MSAs to be returned
+    num_mismatch = 0 # number of MSAs that do not match the reference in length
+    for seq_msa in seq_msas:
+        sequences = seq_msa["seqs"]
+        spec_in_file = seq_msa["species"]
+        frame = seq_msa["frame"]
+        auxdata = None
+        if "seqname" in seq_msa and not output_all_species : # for BioPython MSAs from MAF
+            auxdata = {"seqname" : seq_msa["seqname"],
+                       "chrPos" : seq_msa["chrPos"],
+                       "numSites" : seq_msa["numSites"],
+                       "codon_strand" : seq_msa["codon_strand"]}
+        if "seqs" in seq_msa and output_all_species: # for BioPython MSAs from MAF
+            auxdata = {"seqs" : seq_msa["seqs"],
+                       "species" : seq_msa["species"],
+                       "codon_strand" : seq_msa["codon_strand"],
+                       "numSites" : seq_msa["numSites"],
+                       "chrs" : seq_msa["chrs"],
+                       "chrStarts" : seq_msa["chrStarts"],
+                       "offsets" : seq_msa["offsets"],
+                       "fragLens" : seq_msa["fragLens"],
+                       "aliStrands" : seq_msa["aliStrands"],
+                       "chrSizes" : seq_msa["chrSizes"]}
 
-    # check if these are contained in exactly one reference clade
-    n_refs = [len(x) for x in ref_ids]
+        if "fasta_path" in seq_msa: # for FASTA files
+            auxdata = {"fasta_path" : seq_msa["fasta_path"]}
 
-    if 0 == min(n_refs) or max(n_refs) > 1:
-        return -1, 0, None
+        clade_id, sequence_length, S = None, None, None
 
-    ref_ids = [x[0] for x in ref_ids]
-
-    if len(set(r for (r,i) in ref_ids)) > 1:
-        return -1, 0, None
-
-    msa = MSA(
-        label = None,
-        chromosome_id = None, 
-        start_index = None,
-        end_index = None,
-        is_on_plus_strand = plus_strand,
-        frame = frame,
-        spec_ids = ref_ids,
-        offsets = [],
-        sequences = sequences,
-        use_amino_acids = use_amino_acids,
-        tuple_length = tuple_length,
-        use_codons = use_codons
-    )
-    # Use the correct onehot encoded sequences
-    coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
-
-    # remove all rows with an in-frame stop codon (except last col)
-    stops = msa.in_frame_stops
-    # print (msa, stops)
-    remove_stop_rows = False
-    if stops and remove_stop_rows :
-        msa.delete_rows(stops)
-        coded_sequences = coded_sequences[np.invert(stops)]
-    # print ("after stop deletion:", msa, "\ncoded_sequences=", coded_sequences)
-
-    if len(msa.sequences) < 2:
-        return -2, 0, None
+        # translate species name from file to taxon ids
+        translator = lambda s : trans_dict[s] if s in trans_dict else s
+        msa_taxon_ids = list(map(translator, spec_in_file))
     
-    sequence_length = len(coded_sequences[0])
-    if sequence_length == 0:
-        return -2, 0, None
+        # compare them with the given references
+        ref_ids = [[(r,i) for r in range(len(species)) for i in range(len(species[r])) if s == species[r][i] ] for s in msa_taxon_ids]
 
-    # cardinality of the alphabet that has been onehot-encoded
-    s = coded_sequences.shape[-1]
-    
-    # get the id of the used clade and leaves inside this clade
-    clade_id = msa.spec_ids[0][0]
-    num_species = max([len(specs) for specs in species])
-    leaf_ids = [l for (c,l) in msa.spec_ids]
-    
-    
-    # embed the coded sequences into a full MSA for the whole leaf-set of the given clade
-    S = np.ones((num_species, sequence_length, s), dtype = np.int32)
-    S[leaf_ids,...] = coded_sequences
-    
-    # make the shape conform with the usual way datasets are structured,
-    # namely the columns of the MSA are the examples and should therefore
-    # be the first axis
-    S = np.transpose(S, (1,0,2))
+        # check if these are contained in exactly one reference clade
+        n_refs = [len(x) for x in ref_ids]
 
-    return clade_id, sequence_length, S
+        if 0 == min(n_refs) or max(n_refs) > 1:
+            continue
+
+        ref_ids = [x[0] for x in ref_ids]
+        if len(set(r for (r,i) in ref_ids)) > 1:
+            # taxon is in multiple trees of the forest
+            continue
+
+        msa = MSA(
+            label = None,
+            chromosome_id = None, 
+            start_index = None,
+            end_index = None,
+            is_on_plus_strand = True, # reverse complement was build before
+            frame = frame,
+            spec_ids = ref_ids,
+            offsets = [],
+            sequences = sequences,
+            use_amino_acids = use_amino_acids,
+            tuple_length = tuple_length,
+            use_codons = use_codons,
+            is_codon_aligned = not frame_align_codons,
+            removeFinalStopColumn = False
+        )
+        # Use the correct onehot encoded sequences
+        coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
+
+        if len(msa.sequences) < 2: # no alignment left
+            continue
+
+        # print ("codon MSA")
+        # for cs in msa.codon_aligned_sequences:
+        #    print (cs)
+        sequence_length = len(coded_sequences[0])
+        if sequence_length != auxdata["numSites"]:
+            """ This can happen as the codon construction in tuple_alignment is complicated.
+            Either MSA can be longer than the other and this would mess up the rest of the batch. 
+            TODO: write a function tuple_alignment_ref with as many columns as the reference. 
+            """
+            num_mismatch += 1
+            continue
+
+        if sequence_length == 0:
+            continue
+
+        # cardinality of the alphabet that has been onehot-encoded
+        s = coded_sequences.shape[-1]
+        
+        # get the id of the used clade and leaves inside this clade
+        clade_id = msa.spec_ids[0][0]
+        num_species = max([len(specs) for specs in species])
+        leaf_ids = [l for (c,l) in msa.spec_ids]
+        
+        # embed the coded sequences into a full MSA for the whole leaf-set of the given clade
+        S = np.ones((num_species, sequence_length, s), dtype = np.int32)
+        S[leaf_ids,...] = coded_sequences
+        
+        # make the shape conform with the usual way datasets are structured,
+        # namely the columns of the MSA are the examples and should therefore
+        # be the first axis
+        S = np.transpose(S, (1,0,2))
+        tensor_msas.append((clade_id, sequence_length, S, auxdata))
+
+    if num_mismatch > 0 and len(tensor_msas) > 0:
+        print (f"Warning: {num_mismatch} ({100*num_mismatch/(num_mismatch+len(tensor_msas)):.2f}%) MSAs did not match the reference in length")
+    return tensor_msas
 
 
 
@@ -1271,7 +1606,7 @@ def preprocess_export(dataset, species, splits = None, split_models = None,
 def persist_as_tfrecord(dataset, out_dir, basename, species,
                         splits=None, split_models=None, split_bins=None, 
                         n_wanted=None, use_compression=True, sitewise = False,
-                        verbose=False):
+                        verbose=False, no_codon_alignment=False):
     # Importing Tensorflow takes a while. Therefore to not slow down the rest 
     # of the script it is only imported once used.
     print ("Writing to tfrecords...")
@@ -1301,21 +1636,22 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
         
         for i in tqdm(range(n_wanted), desc="Writing TensorFlow record", unit=" MSA"):
             msa = dataset[i]
-            iconfigurations = msa.spec_ids
-            leaf_configuration = msa.coded_sequences
             label = msa.label
 
             # retrieve the wanted tfwriter for this MSA
-            s = np.digitize(i, split_bins)
+            # split_idx is the index of the split, m is the class label (model)
+            split_idx = np.digitize(i, split_bins)
             m = split_models.index(label) if label in split_models else 0 
-            tfwriter = tfwriters[s][m]
-            n_written[s][m] += 1
+            tfwriter = tfwriters[split_idx][m]
 
             # Write a coded MSA (either as sequence of nucleotides or codons) as an entry into a  Tensorflow-Records file.
             # in order to do so we need to setup the proper format for `tf.train.SequenceExample`
 
             # Use the correct onehot encoded sequences
+            msa.is_codon_aligned = no_codon_alignment # assumed to already be in codons
+
             coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or msa.tuple_length > 1 else msa.coded_sequences
+
 
             # Infer the length of the sequences
             sequence_length = coded_sequences.shape[1]
@@ -1344,7 +1680,9 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
 
             if sitewise:
                 if len(label) != sequence_length:
-                    print("The list of labels is not suited for this sequence length")
+                    print(f"The length of the list of labels ({len(label)})",
+                          f"differs from the sequence length ({sequence_length}).",
+                          file=sys.stderr)
                     continue
                 # use the id of the clade and length of the sequences as context features
                 msa_context = tf.train.Features(feature = {
@@ -1370,6 +1708,7 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
                 # write the serialized example to the TFWriter
                 msa_serialized = msa_sequence_example.SerializeToString()
                 tfwriter.write(msa_serialized)
+                n_written[split_idx][m] += 1
             else:
                 # use label (`0` or `1`), the id of the clade and length of the sequences
                 # as context features
@@ -1396,16 +1735,8 @@ def persist_as_tfrecord(dataset, out_dir, basename, species,
                 # write the serialized example to the TFWriter
                 msa_serialized = msa_sequence_example.SerializeToString()
                 tfwriter.write(msa_serialized)
+                n_written[split_idx][m] += 1
 
-            #if verbose:
-            #    print(f"leaf_configuration[1,...]: {leaf_configuration.shape} {leaf_configuration[1,...]}")
-            #    ichar_test = np.random.randint(0, sequence_length)
-            #    print("ichar_test:", ichar_test)
-            #    print(f"Sample of the conversion:")
-            #    print(f"\tModel: {imodel}")
-            #    print(f"\tSequence Length: {sequence_length}")
-            #    print(f"\tConfiguration: {iconfigurations}")
-            #    print(f"\tPosition {ichar_test} character of the sequence: {leaf_configuration[:, ichar_test]}")
     
     print ("number of tf records written [rows: split bin s, column: model/label m]:\n", n_written)
 
@@ -1535,3 +1866,30 @@ def write_phylocsf(dataset, out_dir, basename, species,
         fa.close()
     print ("number of PhyloCSF records written [rows: split bin s, column: model/label m]:\n", n_written)
 
+def maf_generator(mafpath : str):
+    """ Generator for MAF files. 
+        It generates multiple sequence alignments
+    """
+    try:
+        from Bio import AlignIO # to read MAF files
+        from Bio.Align import MultipleSeqAlignment
+    except ImportError:
+        print("Please install Biopython to use the MAF format.")
+        sys.exit(1)
+    
+    opener = open # for regular text files
+    if '.gz' in pathlib.Path(mafpath).suffixes:
+        opener = gzip.open
+    
+    try:
+        with opener(mafpath, "rt") as msas_file:
+            msa = None
+            for msa in AlignIO.parse(msas_file, "maf"):
+                yield msa
+            if msa is None:
+                print("Error: no MSA found in file %s" % mafpath)
+                sys.exit(1)
+                        
+    except OSError:
+        print ("Error: cannot open file %s" % mafpath)
+        sys.exit(1)
