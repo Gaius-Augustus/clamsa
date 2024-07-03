@@ -109,7 +109,10 @@ def write_preds_to_wig_all(preds, aux, out_file_stem, logits=False):
                 chrStart = chrSize - chrStart - fragLen
             strand = msa['codon_strand'] * aliStrand
             # reverse codon on minus strand is on positive strand in genome
-
+            if chrStart < 1:
+                print ("ERROR chrStart too small", msa)
+                print (f"chrStart={chrStart}, {aliStrand}, chrSize={chrSize}, fragLen={fragLen}",
+                       msa['species'][i], msa['chrs'][i])
             output_wig_record_all(out_file_stem,
                                   msa['species'][i],
                                   msa['chrs'][i],
