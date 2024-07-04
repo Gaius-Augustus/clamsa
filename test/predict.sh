@@ -24,7 +24,7 @@ fi
    --clades ../examples/vertebrate.nwk \
    --use_codons \
    --model_ids '{ "clamsa" : "default" }' \
-   --out_csv clamsa_vert.csv
+   --out clamsa_vert.csv
 
 # takes about 30 seconds on 3000 MSAs
 

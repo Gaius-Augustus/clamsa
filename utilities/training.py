@@ -288,7 +288,8 @@ def train_models(input_dir,
 
             save_weights_dir = f'{saved_weights_basedir}/{str_basenames}/{model_name}'
             Path(save_weights_dir).mkdir(parents=True, exist_ok=True)
-            save_weights_path = f'{save_weights_dir}/{now_str}.h5'
+            # suffix .weights.h5 required by newer versions of tf.keras.callbacks.ModelCheckpoint
+            save_weights_path = f'{save_weights_dir}/{now_str}.weights.h5'
 
             if verbose: 
                 print(f"Current set of hyperparameters: {creation_params}")

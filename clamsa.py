@@ -736,10 +736,10 @@ dm3.chr1 dmel''',
                       mode = 'w' )
             outputstr = output.getvalue()
     
-            if args.out_csv is None:
+            if args.out is None:
                 print(outputstr, end = "")
             else:
-                with open(args.out_csv, mode='w') as f:
+                with open(args.out, mode='w') as f:
                     print(outputstr , end = "", file = f)
 
 
