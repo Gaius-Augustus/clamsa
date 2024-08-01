@@ -100,11 +100,24 @@ def train_models(input_dir,
                 raise Exception(f"Invalid split specification for '{k}': {split_specifications[k]}") from te
 
     num_positions = None
-    # fixed sequence length for ClaSS
-    if "tcmc_class" in model_hyperparameters:
-        num_positions = model_hyperparameters["tcmc_class"]["num_positions"][0] 
+    # fixed sequence length
+    for modelname in model_hyperparameters:
+        if "num_positions" in model_hyperparameters[modelname]:   
+            if num_positions and num_positions != model_hyperparameters[modelname]["num_positions"][0]:
+                new_num_pos = model_hyperparameters[modelname]["num_positions"][0]
+                raise Exception(f"Models that are trained in the same run and have hyper parameter 'num_positions' need the same 'num_positions'. " \
+                    f"Found instead {num_positions} and {new_num_pos}.")
+            num_positions = model_hyperparameters[modelname]["num_positions"][0]
+
+    if "tcmc_ebony" in model_hyperparameters:
+        if not num_positions:
+            raise Exception(f"Model ebony requires hyper parameter 'num_positions'.")
         if tuple_length > 1 and not tuples_overlap:
-            raise Exception(f"Model tcmc_class requires overlapping tuples for tuple length > 1.")
+            raise Exception(f"Model ebony requires overlapping tuples for tuple length > 1.")
+
+    # make tf deterministic
+    #tf.keras.utils.set_random_seed(1)
+    #tf.config.experimental.enable_op_determinism()
 
     # read the datasets for each wanted basename
     input_dir = os.path.join(input_dir, '') # append '/' if not already there
@@ -348,13 +361,6 @@ def train_models(input_dir,
                     
                 elif sitewise and classify:
                     metrics = [accuracy_metric]
-
-                #elif model_name == 'tcmc_class':
-                #    # CategoricalCrossentropy for the classification guesses and neg LL as a second loss
-                #    LL_loss = lambda y_true, y_pred: tf.math.reduce_mean(y_pred)
-                #    loss = [tf.keras.losses.CategoricalCrossentropy(), LL_loss]
-                #    loss_weights = [1.0, .1]
-                #    metrics = [[accuracy_metric, auroc_metric], None] # acc and auroc for guesses, none for negLL
 
                 model.compile(optimizer = optimizer,
                               loss = loss,
