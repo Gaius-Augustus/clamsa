@@ -578,3 +578,88 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
         pass # happens in tf 2.3 when there is no valid MSA
     
     return preds, aux
+
+
+def predict_on_augustus_files(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
+                           saved_weights_dir,
+                           log_dir,
+                           clades,
+                           paths,
+                           use_codons = True,
+                           tuple_length = 1,
+                           tuples_overlap = False,
+                           batch_size = 30,
+                           trans_dict = None,
+                           ebony = False):
+    """
+     This case is only implemented for 2 classes (binary classification).
+    """
+    # calculate model properties
+    tuple_length = 3 if use_codons else tuple_length
+    alphabet_size = 4 ** tuple_length
+    num_leaves = database_reader.num_leaves(clades)
+
+    # load the wanted models and compile them
+    models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
+    accuracy_metric = 'accuracy'
+    auroc_metric = tf.keras.metrics.AUC(num_thresholds = 1000, dtype = tf.float32, name='auroc')
+    loss = tf.keras.losses.CategoricalCrossentropy()
+    optimizer = tf.keras.optimizers.Adam(0.0005)
+
+    model = next(iter(models.values())) # only one model is supported for now
+    model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
+    
+    # get num_positions if position specific model
+    tcmc_config = model.get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']
+    num_positions = tcmc_config['num_positions'] if 'num_positions' in tcmc_config else None
+
+    if ebony and num_positions == None:
+        print("Ebony prediction only work for position specific models.")
+        sys.exit(1)
+    
+    trans_dict = trans_dict if not trans_dict is None else {}
+    aux = []
+    
+    def sequence_generator():
+        for augfile in paths:
+            for msa in msa_converter.parse_augustus_seqs(augfile, ebony):
+                tensor_msas = msa_converter.parse_text_MSA(
+                    msa, clades, trans_dict = trans_dict,
+                    use_amino_acids = False, num_positions = num_positions,     
+                    tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons,
+                    frame_align_codons = False, ebony = ebony)
+                for (cid, sl, S, auxdata) in tensor_msas: 
+                    # filter bad MSAs (trivial or missing reference)
+                    if cid < 0:
+                        continue
+                    aux.append(auxdata)
+                    yield cid, sl, S   
+
+    # construct a `tf.data.Dataset` from the fasta files    
+    # generate a dataset for these files
+    dataset = tf.data.Dataset.from_generator(sequence_generator, output_types=(tf.int32, tf.int64, tf.float64))
+
+    # batch and reshape sequences to match the input specification of tcmc
+    #ds = database_reader.padded_batch(ds, batch_size, num_leaves, alphabet_size)
+    padded_shapes = ([], [], [None, max(num_leaves), alphabet_size])
+    dataset = dataset.padded_batch(batch_size, 
+                                   padded_shapes = padded_shapes, 
+                                   padding_values = (
+                                       tf.constant(0, tf.int32), 
+                                       tf.constant(0, tf.int64), 
+                                       tf.constant(1.0, tf.float64)
+                                   ))
+
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    dataset = dataset.map(database_reader.concat_sequences, num_parallel_calls = 4)
+
+    # predict on each model
+    preds = collections.OrderedDict()
+
+    try:
+        preds = model.predict(dataset)
+        # print ("preds", preds.shape)
+    except UnboundLocalError:
+        pass # happens in tf 2.3 when there is no valid MSA
+    
+    return preds, aux

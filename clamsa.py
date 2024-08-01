@@ -150,7 +150,7 @@ Use one of the following commands:
                 default = 0)
 
         parser.add_argument('--fixed_sequence_length',
-                help='Only sequences with SEQ_LEN number of nucleotides or amino acids will be regarded. Will be calculated after MARGIN_WIDTH was subtracted from sequence.',
+                help='Only MSAs with length SEQ_LEN will be regarded. Will be calculated after MARGIN_WIDTH was subtracted from sequences.',
                 metavar='SEQ_LEN',
                 type=int)
 
@@ -551,15 +551,15 @@ Use one of the following commands:
             formatter_class=argparse.RawTextHelpFormatter)
 
         parser.add_argument('in_type',
-                choices=['fasta', 'tfrecord', 'maf'],
+                choices=['fasta', 'tfrecord', 'maf', 'augustus'],
                 metavar='INPUT_TYPE',
-                help='Specif the input file type. Supported are: {fasta, tfrecord, maf}',
+                help='Specif the input file type. Supported are: {fasta, tfrecord, maf, augustus}',
         )
         
 
         parser.add_argument('input', 
                             metavar='INPUT',
-                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord: A space separated list of paths to tfrecord files.\nIf INPUT_TYPE == maf: A (gzipped) MAF file. A .wig file with coding probabilities of codons in all six-frames is output. Requires --sitewise option',
+                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord  or INPUT_TYPE == augustus: A space separated list of paths to tfrecord/augustus files.\nIf INPUT_TYPE == maf: A (gzipped) MAF file. A .wig file with coding probabilities of codons in all six-frames is output. Requires --sitewise option',
                             type=file_exists,
                             nargs='+',
         )
@@ -703,7 +703,7 @@ dm3.chr1 dmel''',
         # import on demand (importing tf is costly)
         import utilities.model_evaluation as me
 
-        if args.in_type == 'fasta' or args.in_type == 'maf': # text MSA input
+        if args.in_type == 'fasta' or args.in_type == 'maf' or args.in_type == 'augustus': # text MSA input
             # read name->taxon_id translation tables into dictionary if specified
             trans_dict = {}
             if not args.name_translation is None:
@@ -735,7 +735,7 @@ dm3.chr1 dmel''',
                     remove_stop_rows = args.remove_stop_rows, num_classes = args.num_classes, 
                     sitewise = args.sitewise, classify = args.classify)
 
-            else: # in_type == 'maf'
+            elif args.in_type == 'maf': # in_type == 'maf'
                 if args.num_classes != 2:
                     raise Exception("maf input is currently only supported for binary classification")
                 if len(args.model_ids) > 1:
@@ -748,6 +748,17 @@ dm3.chr1 dmel''',
                     batch_size = args.batch_size, trans_dict = trans_dict, 
                     remove_stop_rows = args.remove_stop_rows, 
                     sliding_window = args.sliding_window, ebony = args.ebony)
+
+            else:  # args.in_type == 'augustus'
+                # todo: exceptions
+                preds, aux = me.predict_on_augustus_files(
+                    trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
+                    log_dir = args.log_basedir, clades = args.clades,
+                    paths = args.input, use_codons = args.use_codons,
+                    tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
+                    batch_size = args.batch_size, trans_dict = trans_dict, ebony = args.ebony
+                )
+                # todo: what to do with output
 
         elif args.in_type == 'tfrecord':
             if args.sitewise:
@@ -804,7 +815,7 @@ dm3.chr1 dmel''',
                 start = auxdata['coords'][0]
                 end = auxdata['coords'][1]
                 strand = '+' if auxdata['plus_strand'] == True else '-'
-                attr = "source=EB"
+                attr = "source=X"
                 hints.append((seqname, 'clamsa', hint_type, start, end, round(score, 4), strand, '.', attr))
             hints.sort(key = itemgetter(0,3))  # first sort seqname, then start coord
             
@@ -814,8 +825,8 @@ dm3.chr1 dmel''',
                 for hint in hints: 
                     f.write('\t'.join(map(str, hint)) + '\n')
                     
-        elif args.sliding_window:
-            for score, auxdata in zip(preds[:,1], aux): auxdata.update({'pred': score})
+        elif args.sliding_window or args.in_type == "augustus":
+            for score, auxdata in zip(preds[:,1], aux): auxdata.update({'score': score})
             
             df = pd.DataFrame.from_dict(aux)
     
