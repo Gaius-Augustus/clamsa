@@ -580,24 +580,19 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
     return preds, aux
 
 
-def predict_on_augustus_files(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
+def model_load(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
                            saved_weights_dir,
                            log_dir,
                            clades,
-                           paths,
                            use_codons = True,
-                           tuple_length = 1,
-                           tuples_overlap = False,
-                           batch_size = 30,
-                           trans_dict = None,
-                           ebony = False):
+                           tuple_length = 1
+                           ):
     """
      This case is only implemented for 2 classes (binary classification).
     """
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
     alphabet_size = 4 ** tuple_length
-    num_leaves = database_reader.num_leaves(clades)
 
     # load the wanted models and compile them
     models = collections.OrderedDict( (name, recover_model(trial_ids[name], clades, alphabet_size, log_dir, saved_weights_dir)) for name in trial_ids)
@@ -608,6 +603,23 @@ def predict_on_augustus_files(trial_ids, # OrderedDict of model ids with keys li
 
     model = next(iter(models.values())) # only one model is supported for now
     model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
+
+    return model
+    
+
+def predict_on_augustus_files(model,
+                           clades,
+                           paths,
+                           use_codons = True,
+                           tuple_length = 1,
+                           tuples_overlap = False,
+                           batch_size = 30,
+                           trans_dict = None,
+                           ebony = False):
+
+    
+    alphabet_size = 4 ** tuple_length
+    num_leaves = database_reader.num_leaves(clades)
     
     # get num_positions if position specific model
     tcmc_config = model.get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']
