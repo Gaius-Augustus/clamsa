@@ -253,46 +253,48 @@ def tuple_alignment(sequences, gap_symbols='-', frame = 0, tuple_length = 3,
 
 
 
-def leaf_order(path, use_alternatives=False):
+def leaf_order(tree, use_alternatives=False):
     """
         Find the leaf names in a Newick file and return them in the order specified by the file
         
         Args:
-            path (str): Path to the Newick file
+            tree (str): Path to the Newick file or Newick string
             use_alternatives (bool): TODO
             
         Returns:
             List[str]: Leaf names encountered in the file
     """
     
-    # regex that finds leave nodes in a newick string
+    # regex that finds leaf nodes in a newick string
     # these are precisely those nodes which do not have children
     # i.e. to the left of the node is either a '(' or ',' character
     # or the beginning of the line
-    leave_regex = re.compile('(?:^|[(,])([\w.-]*)[:](?:(?:[0-9]*[.])?[0-9]+)')
+    leaf_regex = re.compile('(?:^|[(,])([\w.-]*)[:](?:(?:[0-9]*[.])?[0-9]+)')
     
-    with open(path, 'r') as fp:
-        
-        nwk_string = fp.readline()
-        
-        matches = leave_regex.findall(nwk_string)
-        
-        alt_path = path + ".alt"
-        
-        if use_alternatives and os.path.isfile(alt_path):
-            with open(alt_path) as alt_file:
-                alt = json.load(alt_file)
-                
-                # check for valid input 
-                assert isinstance(alt, dict), f"Alternatives in {alt_path} is no dictionary!"
-                for i in alt:
-                    assert isinstance(alt[i], list), f"Alternative for {i} in {alt_path} is not a list!"
-                    for entry in alt[i]:
-                        assert isinstance(entry, str), f"Alternative {alt[i][j]} for {i} in {alt_path} is not a string!"
-                
-                matches = [set([matches[i]] + alt[matches[i]]) for i in range(len(matches))]
+    if os.path.isfile(tree):
+        with open(tree, 'r') as fp:
+            nwk_string = fp.readline()
 
-        return matches
+    else: nwk_string = tree
+        
+    matches = leaf_regex.findall(nwk_string)
+        
+    alt_path = tree + ".alt"
+        
+    if use_alternatives and os.path.isfile(alt_path):
+        with open(alt_path) as alt_file:
+            alt = json.load(alt_file)
+                
+            # check for valid input 
+            assert isinstance(alt, dict), f"Alternatives in {alt_path} is no dictionary!"
+            for i in alt:
+                assert isinstance(alt[i], list), f"Alternative for {i} in {alt_path} is not a list!"
+                for entry in alt[i]:
+                    assert isinstance(entry, str), f"Alternative {alt[i][j]} for {i} in {alt_path} is not a string!"
+                
+            matches = [set([matches[i]] + alt[matches[i]]) for i in range(len(matches))]
+
+    return matches
     
 def import_fasta_training_file(paths, undersample_neg_by_factor = 1., 
                                reference_clades = None, margin_width = 0, fixed_sequence_length = None,
@@ -1102,40 +1104,18 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
     return tensor_msas
 
 
-def parse_augustus_seqs(path: str, ebony = False):
+def parse_augustus_seqs(augfile: str):
     """ 
     Generator type function for prediction on augustus files
-    ebony (bool): get boundary hint information
     """
     msa = {}
     species = {}
     slice_pattern = re.compile("^[0-9]+\\t[acgtn\-]+$")
-
-    def get_type(feature, strand):
-        exon_type, side = feature.split("_")
-        
-        if (exon_type == "initial" or exon_type == "single") and ((strand == "+" and side == "0") or (strand == "-" and side == "1")):
-            return "start_codon"
-        if (exon_type == "terminal" or exon_type == "single") and ((strand == "+" and side == "1") or (strand == "-" and side == "0")):
-            return "stop_codon"
-        if (exon_type == "initial" or exon_type == "internal") and ((strand == "+" and side == "1") or (strand == "-" and side == "0")):
-            return "dss"
-        if (exon_type == "terminal" or exon_type == "internal") and ((strand == "+" and side == "0") or (strand == "-" and side == "1")):
-            return "ass"
-        return "unknown"
-
-    def get_coords(ftype, strand, start, stop):
-        if (ftype == "start_codon" and strand == "+") or (ftype == "stop_codon" and strand == "-"):
-            return stop, stop + 2
-        if (ftype == "stop_codon" and strand == "+") or (ftype == "start_codon" and strand == "-"):
-            return start - 2, start
-        if (ftype == "ass" and strand == "+") or (ftype == "dss" and strand == "-"):
-            return start, start
-        if (ftype == "dss" and strand == "+") or (ftype == "ass" and strand == "-"):
-            return stop, stop
-        return start, stop
     
-    with (gzip.open(path, 'rt') if path.endswith('.gz') else open(path, 'r')) as f:
+    with (gzip.open(augfile, 'rt') if (os.path.isfile(augfile) and augfile.endswith('.gz')) \
+        else open(augfile, 'r') if os.path.isfile(augfile) \
+        else io.StringIO(augfile)) as f:
+
         line = f.readline()
             
         while line:
@@ -1149,14 +1129,7 @@ def parse_augustus_seqs(path: str, ebony = False):
                 label, _, feature, chr, start, stop, strand, frame = line.split()
                 start = int(start)
                 stop = int(stop)
-                #if ebony:
-                #    # get hint type, coods
-                #    ftype = get_type(feature, strand)
-                #    fstart, fstop = get_coords(ftype, strand, start, stop)
-                #else:
-                #    ftype = feature
-                #    fstart = start
-                #    fstop = stop
+
                 # new entry
                 msa = {"seqs" : [],
                        "species": [],

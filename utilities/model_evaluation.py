@@ -581,14 +581,14 @@ def predict_on_maf_files(trial_ids, # OrderedDict of model ids with keys like 't
 
 
 def model_load(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
-                           saved_weights_dir,
-                           log_dir,
-                           clades,
-                           use_codons = True,
-                           tuple_length = 1
-                           ):
+               saved_weights_dir,
+               log_dir,
+               clades,
+               use_codons = True,
+               tuple_length = 1
+               ):
     """
-     This case is only implemented for 2 classes (binary classification).
+    Load weights and compile models
     """
     # calculate model properties
     tuple_length = 3 if use_codons else tuple_length
@@ -601,10 +601,15 @@ def model_load(trial_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
     loss = tf.keras.losses.CategoricalCrossentropy()
     optimizer = tf.keras.optimizers.Adam(0.0005)
 
-    model = next(iter(models.values())) # only one model is supported for now
-    model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
+    for n in models:
+        models[n].compile(optimizer = optimizer,
+                          loss = loss,
+                          metrics = [accuracy_metric, auroc_metric])
 
-    return model
+    #model = next(iter(models.values())) # only one model is supported for now
+    #model.compile(optimizer = optimizer, loss = loss, metrics = [accuracy_metric, auroc_metric])
+
+    return models
     
 
 def predict_on_augustus_files(model,
@@ -614,8 +619,7 @@ def predict_on_augustus_files(model,
                            tuple_length = 1,
                            tuples_overlap = False,
                            batch_size = 30,
-                           trans_dict = None,
-                           ebony = False):
+                           trans_dict = None):
 
     
     alphabet_size = 4 ** tuple_length
@@ -624,22 +628,18 @@ def predict_on_augustus_files(model,
     # get num_positions if position specific model
     tcmc_config = model.get_config()['layers'][[layer['class_name'] for layer in model.get_config()['layers']].index('TCMCProbability')]['config']
     num_positions = tcmc_config['num_positions'] if 'num_positions' in tcmc_config else None
-
-    if ebony and num_positions == None:
-        print("Ebony prediction only work for position specific models.")
-        sys.exit(1)
     
     trans_dict = trans_dict if not trans_dict is None else {}
     aux = []
     
     def sequence_generator():
         for augfile in paths:
-            for msa in msa_converter.parse_augustus_seqs(augfile, ebony):
+            for msa in msa_converter.parse_augustus_seqs(augfile):
                 tensor_msas = msa_converter.parse_text_MSA(
                     msa, clades, trans_dict = trans_dict,
                     use_amino_acids = False, num_positions = num_positions,     
                     tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons,
-                    frame_align_codons = False, ebony = ebony)
+                    frame_align_codons = False)
                 for (cid, sl, S, auxdata) in tensor_msas: 
                     # filter bad MSAs (trivial or missing reference)
                     if cid < 0:

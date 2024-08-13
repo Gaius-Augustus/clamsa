@@ -752,20 +752,22 @@ dm3.chr1 dmel''',
             else:  # args.in_type == 'augustus'
                 # todo: exceptions
 
-                model = me.model_load(trial_ids = model_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
+                models = me.model_load(trial_ids = model_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
                            saved_weights_dir = args.saved_weights_basedir,
                            log_dir = args.log_basedir,
                            clades = args.clades,
                            use_codons = args.use_codons,
                            tuple_length = args.tuple_length)
 
+                # augustus prediction only with one model at a time at the moment
+                model = next(iter(models.values()))
 
                 preds, aux = me.predict_on_augustus_files(
                     model,
                     clades = args.clades,
                     paths = args.input, use_codons = args.use_codons,
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
-                    batch_size = args.batch_size, trans_dict = trans_dict, ebony = args.ebony
+                    batch_size = args.batch_size, trans_dict = trans_dict
                 )
                 # todo: what to do with output
 
