@@ -670,14 +670,22 @@ dm3.chr1 dmel''',
                             help='Predict sitewise classes (needs a trained sitewise classification model). Currently only works on fasta files',
                             action='store_true',
         )
+        parser.add_argument('--output_all_species',
+                            help='When input is in MAF format, output wiggle files for all species, not just the reference. Not compatible with --ebony or --sliding_window',
+                            action='store_true',
+        )
+        parser.add_argument('--logits',
+                            help='Wiggle output are logits (positiv and negative) rather than probabilities.',
+                            action='store_true',
+        )
 
         parser.add_argument('--sliding_window',
-                            help='Predict in a sliding window manner. Works only for position specific models on maf files.',
+                            help='Predict in a sliding window manner. Works only for position specific models on MAF files.',
                             action='store_true',
         )
 
         parser.add_argument('--ebony',
-                            help='Score potential exon boundaries. Works only for exon boundary models on maf files.',
+                            help='Score potential exon boundaries. Works only for exon boundary models on MAF files.',
                             action='store_true'
         )
 
@@ -769,7 +777,8 @@ dm3.chr1 dmel''',
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
                     batch_size = args.batch_size, trans_dict = trans_dict, 
                     remove_stop_rows = args.remove_stop_rows, 
-                    sliding_window = args.sliding_window, ebony = args.ebony)
+                    sliding_window = args.sliding_window, ebony = args.ebony,
+                    output_all_species = args.output_all_species)
 
             else:  # args.in_type == 'augustus'
                 if args.num_classes != 2:
@@ -804,7 +813,6 @@ dm3.chr1 dmel''',
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
                     batch_size = args.batch_size, trans_dict = trans_dict
                 )
-
 
         elif args.in_type == 'tfrecord':
             if args.sitewise:
@@ -857,7 +865,9 @@ dm3.chr1 dmel''',
                 pickle_file.close()
             elif args.in_type == 'maf':
                 # write wig file
-                wg.write_preds_to_wig(preds, aux, args.out, logits=True)
+                wg.write_preds_to_wig(preds, aux, args.out,
+                                      output_all_species=args.output_all_species,
+                                      logits=args.logits)
                     
         elif args.ebony or args.sliding_window or args.in_type == "augustus":
             for score, auxdata in zip(preds[:,1], aux): 
@@ -905,10 +915,10 @@ dm3.chr1 dmel''',
                       mode = 'w' )
             outputstr = output.getvalue()
     
-            if args.out_csv is None:
+            if args.out is None:
                 print(outputstr, end = "")
             else:
-                with open(args.out_csv, mode='w') as f:
+                with open(args.out, mode='w') as f:
                     print(outputstr , end = "", file = f)
 
 

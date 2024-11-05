@@ -472,7 +472,8 @@ def predict_on_maf_files(model, # loaded and compiled model
                            trans_dict = None,
                            remove_stop_rows = False,
                            sliding_window = False,
-                           ebony = False):
+                           ebony = False,
+                           output_all_species = False):
     """
      This case is only implemented for 2 classes (binary classification).
     """
@@ -507,7 +508,8 @@ def predict_on_maf_files(model, # loaded and compiled model
                         msa, clades, trans_dict = trans_dict,
                         remove_stop_rows = remove_stop_rows, use_amino_acids = False, num_positions = num_positions,     
                         tuple_length = tuple_length, tuples_overlap = tuples_overlap, use_codons = use_codons,
-                        frame_align_codons = False, sliding_window = sliding_window, ebony = ebony)
+                        frame_align_codons = False, sliding_window = sliding_window, ebony = ebony, 
+                        output_all_species = output_all_species)
                     for (cid, sl, S, auxdata) in tensor_msas: 
                         # filter bad MSAs (trivial or missing reference)
                         if cid < 0:
@@ -537,11 +539,8 @@ def predict_on_maf_files(model, # loaded and compiled model
 
     # predict on each model
     preds = collections.OrderedDict()
-        
-
     try:
         preds = model.predict(dataset)
-        # print ("preds", preds.shape)
     except UnboundLocalError:
         pass # happens in tf 2.3 when there is no valid MSA
     
