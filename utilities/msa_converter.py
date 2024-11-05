@@ -1161,7 +1161,7 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
             chromosome_id = None, 
             start_index = None,
             end_index = None,
-            is_on_plus_strand = plus_strand,
+            is_on_plus_strand = True, # reverse complement was build before
             frame = frame,
             spec_ids = ref_ids,
             offsets = [],
@@ -1169,7 +1169,9 @@ def parse_text_MSA(text_MSA, clades, use_codons=True, margin_width=0, num_positi
             use_amino_acids = use_amino_acids,
             tuple_length = tuple_length,
             tuples_overlap = tuples_overlap,
-            use_codons = use_codons
+            use_codons = use_codons,
+            is_codon_aligned = not frame_align_codons,
+            removeFinalStopColumn = False
         )
         # Use the correct onehot encoded sequences
         coded_sequences = msa.coded_codon_aligned_sequences if msa.use_codons or (msa.tuple_length > 1 and not msa.tuples_overlap) \
