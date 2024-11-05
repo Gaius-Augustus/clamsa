@@ -269,17 +269,26 @@ def leaf_order(tree, use_alternatives=False):
     # these are precisely those nodes which do not have children
     # i.e. to the left of the node is either a '(' or ',' character
     # or the beginning of the line
-    leaf_regex = re.compile('(?:^|[(,])([\w.-]*)[:](?:(?:[0-9]*[.])?[0-9]+)')
+    leaf_regex = re.compile(r'(?:^|[(,])([\w.-]*)[:](?:(?:[0-9]*[.])?[0-9]+)')
+    alt_path = ""
     
-    if os.path.isfile(tree):
-        with open(tree, 'r') as fp:
-            nwk_string = fp.readline()
+    if isinstance(tree, str):
+        if os.path.isfile(tree):
+            with open(tree, 'r') as fp:
+                nwk_string = fp.readline()
+                
+            alt_path = tree + ".alt"
+                
+        else: nwk_string = tree
+    
+    elif isinstance(tree, io.StringIO):
+        nwk_string = tree.read()
+        
+    else:
+        raise TypeError(f"Unsupported type: {type(tree).__name__}. Supported types are: {', '.join(t.__name__ for t in (str, io.StringIO))}.")
 
-    else: nwk_string = tree
         
     matches = leaf_regex.findall(nwk_string)
-        
-    alt_path = tree + ".alt"
         
     if use_alternatives and os.path.isfile(alt_path):
         with open(alt_path) as alt_file:
@@ -776,22 +785,11 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
         sys.exit(1)
 
     spec_in_file = []
-    #seqname = []
-    #strand = []
-    #chrStart = []
     for seqrec in msa: 
         spec_in_file.append(seqrec.id.split('.', 1)[0])
         seqrec.seq = seqrec.seq.lower()
-    #    spec_id = seqrec.id.split('.', 1)  
-    #    spec_in_file.append(spec_id[0])  # species
-    #    seqname.append(spec_id[1:][0])  # sequence  name
-    #    strand.append(seqrec.annotations["strand"])  # strand
-    #    chrStart.append(seqrec.annotations["start"]+1)  # start pos of sequence, +1 bc 0-based in MAF, here 1-based for GFF comp.
-    
-    #orig_strand = [s == 1 for s in strand]  # plus strand or not
-    #reverse_strand = [not s for s in orig_strand]  # plus strand or not for reverse complement
+
  
-    #ebony_pos = int(sl/2) # pos of boundary in window
     alilen = len(refrow)  # alignment length
     msalst = []
     num_gaps = 0
@@ -818,6 +816,11 @@ def get_window_seqs(msa : MultipleSeqAlignment, sl: int):
 
 def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
     """
+    Get MSAs of length sl of potential exon boundaries , only splice sites rn tho
+    @param msa: one MSA object parsed by Biopython, e.g. from a MAF file
+            sl: length of window msa
+    @return List[str]: Sequences (= rows of MSA) in the fasta file
+            List[str]: Species names for each row
     """
     refseqrec = msa[0] # the first sequence is the reference
     dot = refseqrec.id.find('.')
@@ -844,19 +847,19 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
 
 
     def get_coords(bound_type, ind):
-        # returns msa start, msa stop, boundary signal start, boundary signal stop
+        # returns msa start, msa stop, boundary signal start, boundary signal stop  coordinates
         if bound_type == 'dss':
             return [int(ind - sl/2), int(ind - 1 + sl/2), ind, ind]
         if bound_type == 'ass':
             return [int(ind + 2 - sl/2), int(ind + 1 + sl/2), ind + 1, ind + 1]
-        #if bound_type == 'start_codon':
+        #if bound_type == 'start':
         #    return [int(ind - sl/2), int(ind - 1 + sl/2), ind, ind + 2]
-        #if bound_type == 'stop_codon':
+        #if bound_type == 'stop':
         #    return [int(ind + 3 - sl/2), int(ind + 2 + sl/2), ind, ind + 2]
         return [-1,-1,-1,-1]
 
     def mirror(pos):
-        # mirror ind in pos around value
+        # mirror indices in pos around mirror_value
         mirrored = []
         mirror_value = (alilen - 1) / 2
         for coord in pos:
@@ -865,11 +868,12 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
 
     def alignability(msa, pattern):
         # relative number of non-gaps in potential coding region + boundary pattern
+        # as rough measure for conservation
         halfway = int(sl/2)
         bound = {'dss': (0, halfway + 2),
                 'ass': (halfway - 2 , sl)#,
-                #'start_codon': (halfway, sl),
-                #'stop_codon': (0, halfway)
+                #'start': (halfway, sl),
+                #'stop': (0, halfway)
                 }
         gaps = 0
         total = 0
@@ -883,8 +887,8 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
     # exon boundary patterns
     bounds = {'dss': re.compile(r'g[ct]'),  # donor ss gc, gt
               'ass': re.compile(r'ag')#,  # acceptor ss ag
-              #'start_codon': re.compile(r'atg'),  # start codon atg
-              #'stop_codon': re.compile(r'ta[ag]|tga')  # stop codon taa, tag, tga
+              #'start': re.compile(r'atg'),  # start codon atg
+              #'stop': re.compile(r'ta[ag]|tga')  # stop codon taa, tag, tga
     }
 
 
@@ -896,16 +900,15 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
         # search ref seq for exon boundary patterns
         for pattern in bounds:
             for match in re.finditer(bounds[pattern], refseq):
-                # get coords of msa and for hint
-                msa_coord1, msa_coord2, hint_coord1, hint_coord2 = get_coords(pattern, match.start())
+                # get coords of msa and for signal
+                msa_coord1, msa_coord2, signal_coord1, signal_coord2 = get_coords(pattern, match.start())
                 
                 # mirror reverse complement coords to get coords in alignment
-                if i == -1:  msa_coord2, msa_coord1, hint_coord2, hint_coord1 = mirror([msa_coord1, msa_coord2, hint_coord1, hint_coord2])
+                if i == -1:  msa_coord2, msa_coord1, signal_coord2, signal_coord1 = mirror([msa_coord1, msa_coord2, signal_coord1, signal_coord2])
                 
                 # coordinates out of alignment bounds
                 if msa_coord1 < 0 or msa_coord2 >= alilen: continue
 
-                # maybe score consensus at boundary pattern??
                 # get msa
                 window = msa[:, msa_coord1:msa_coord2+1]
                 if i == -1:
@@ -914,7 +917,7 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
                 # relative number of non-gaps in potential coding region as rough measure for alignability/conservation
                 if alignability(window, pattern) < 0.6: continue
 
-                num_gaps = refrow.count('-', 0, int(hint_coord1))  # count gaps in refrow to adjust hint coords
+                num_gaps = refrow.count('-', 0, int(signal_coord1))  # count gaps in refrow to adjust signal coords
                 plus_strand = (strand == 1 and i == 1) or (strand != 1 and i != 1)
 
                 msalst.append({"seqs" : [str(rec.seq) for rec in window],
@@ -923,7 +926,7 @@ def get_ebony_seqs(msa: MultipleSeqAlignment, sl: int):
                                "plus_strand" : plus_strand,
                                "seqname" : refChr,
                                "type" : pattern, 
-                               "coords" : (refchrStart + hint_coord1 - num_gaps, refchrStart + hint_coord2  - num_gaps)})
+                               "coords" : (refchrStart + signal_coord1 - num_gaps, refchrStart + signal_coord2  - num_gaps)})
 
     return msalst
 

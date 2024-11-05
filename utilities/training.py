@@ -464,6 +464,7 @@ def train_models(input_dir,
                 if datasets['test'] != None:
                     if verbose:
                         print("Evaluating the 'test' dataset:")
+
                     if sitewise and not classify:
                         test_loss, test_rec0, test_rec1, test_rec2, test_prec0, test_prec1, test_prec2 = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
@@ -475,28 +476,20 @@ def train_models(input_dir,
                             tf.summary.scalar('precision_0', test_prec0, step=1)
                             tf.summary.scalar('precision_1', test_prec1, step=1)
                             tf.summary.scalar('precision_2', test_prec2, step=1)
+
                     elif sitewise and classify:
                         test_loss, test_acc = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
                             tf.summary.scalar('accuracy', test_acc, step=1)
                             #tf.summary.scalar('auroc', test_auroc, step=1)
                             tf.summary.scalar('loss', test_loss, step=1)
+
                     else:
                         test_loss, test_acc, test_auroc = model.evaluate(datasets['test'])
                         with tf.summary.create_file_writer(f'{rundir}/test').as_default():
                             tf.summary.scalar('accuracy', test_acc, step=1)
                             tf.summary.scalar('auroc', test_auroc, step=1)
                             tf.summary.scalar('loss', test_auroc, step=1)
-
-                    #if model_name == 'tcmc_class':
-                    #    test_loss, guesses_loss, negLL_loss, guesses_acc, guesses_auroc = model.evaluate(datasets['test'])
-
-                    #    with tf.summary.create_file_writer(f'{rundir}/test').as_default():
-                    #        tf.summary.scalar('accuracy', guesses_acc, step=1)
-                    #        tf.summary.scalar('auroc', guesses_auroc, step=1)
-                    #        tf.summary.scalar('loss', test_loss, step=1)
-                    #        tf.summary.scalar('categorical_crossentropy', guesses_loss, step=1)
-                    #        tf.summary.scalar('negative_loglikelihood', negLL_loss, step=1)
                     
     return 0
 

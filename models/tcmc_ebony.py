@@ -7,6 +7,11 @@ from functools import partial
 from utilities import database_reader
 from tf_tcmc.tcmc.tcmc import TCMCProbability
 
+"""
+@author: Hannah Thierfeldt
+last edited: 2024-10-28
+"""
+
 def create_model(forest, 
                  alphabet_size,
                  new_alphabet_size = 0,
@@ -75,8 +80,7 @@ def create_model(forest,
     Encoded_sequences = encoding_layer(sequences) if new_alphabet_size > 0 else sequences
     P = tcmc_layer(Encoded_sequences, clade_ids)
     log_P = log_layer(P)
-    X = log_P
-    X = reshape_layer(X)
+    X = reshape_layer(log_P)
 
     X = conv_layer(X)
     X = maxpool_layer(X)
@@ -172,12 +176,9 @@ class ReshapeBatch(tf.keras.layers.Layer):
         super(ReshapeBatch, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        #self.M = input_shape[-1]
         super(ReshapeBatch, self).build(input_shape)
 
     def call(self, inputs):
-        #X = tf.transpose(tf.reshape(inputs, (-1, self.k, self.M)), perm = (0,2,1))  # shape (B,M,k)
-        #X = tf.reshape(inputs, (-1, self.k * self.M))  # shape (B, M * k)
         M = tf.shape(inputs)[-1]
         X = tf.reshape(inputs, (-1, self.k, M))
         return X
@@ -237,12 +238,6 @@ class FrameLogLikelihood(tf.keras.layers.Layer):
 
         B = tf.shape(inputs)[0]  # size of batch dim
         b = tf.cast(tf.math.round(B/self.k), tf.int32)  # number of msas i.e. batch size, rounding bc of precision errors
-
-        # seq_ids for unsorted_segment_mean
-        #seq_ids = np.array([], dtype=np.int32)
-        #for i in tf.range(b):
-        #    tf.autograph.experimental.set_loop_options(shape_invariants=[(seq_ids, tf.TensorShape([None]))])  # tell tf that seq_id changes shape to unknown
-        #    seq_ids = tf.concat([seq_ids, i * 6 + self.left_ids, self.overlap_ids, i * 6 + self.right_ids], 0)
          
         left_len = tf.shape(self.left_ids)[0]
         overlap_len = tf.shape(self.overlap_ids)[0]
@@ -258,11 +253,8 @@ class FrameLogLikelihood(tf.keras.layers.Layer):
             seq_ids = tf.tensor_scatter_nd_add(seq_ids, tf.reshape(tf.range(start, start + left_len), (-1,1)), i * 6 + self.left_ids)
             seq_ids = tf.tensor_scatter_nd_add(seq_ids, tf.reshape(tf.range(start + left_len, start + left_len + overlap_len), (-1,1)), self.overlap_ids)
             seq_ids = tf.tensor_scatter_nd_add(seq_ids, tf.reshape(tf.range(start + left_len + overlap_len, start + left_len + overlap_len + right_len), (-1,1)), i * 6 + self.right_ids)
-        # get values in TensorArray as Tensor
-        #seq_ids = seq_ids.concat()
          
         framelikelihood = tf.math.unsorted_segment_mean(inputs, seq_ids, 6 * b) 
-        #framelikelihood = tf.transpose(tf.reshape(framelikelihood, (-1, 6, self.M)), perm = (0,2,1))  # shape (B,M,6)
         framelikelihood = tf.reshape(framelikelihood, (b, 6 * self.M))  # shape (B,6*M)
         
         return framelikelihood 
@@ -319,9 +311,7 @@ class Depth(tf.keras.layers.Layer):
     @tf.function
     def call(self, inputs):
         sequences = tf.cast(inputs, tf.float64)
-        #clade_ids = inputs[1]
         batched_sequences = tf.reshape(sequences, (-1, self.k, self.N, self.s))  # shape (b, k, N, s)
-        #depth_ids = tf.reshape(clade_ids, (-1,self.k))[:,0]
 
         # count ones in alphabet dim and sum over columns of msas, all ones means species not aligned
         sequence_sum = tf.math.reduce_sum(batched_sequences, axis=[1,-1]) # shape (b,N)
@@ -330,13 +320,7 @@ class Depth(tf.keras.layers.Layer):
 
         # count present species by summing over N
         depth = tf.reduce_sum(indices, axis = -1, keepdims = True)
-        #ones = tf.ones_like(indices, dtype = tf.float64)  # ones the same shape of indices
-        # stack to create one-hot encoding, last dim has alphabet size 2
-        # this transforms species aligned to character 1 and species not aligned to gap
-        #depth_sequences = tf.stack([indices, ones], axis = -1)  
-        
-        # output shape (b,1)
-        # tf.math.log(depth)
+
         return tf.math.log(depth)
 
     def get_config(self):

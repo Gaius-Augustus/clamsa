@@ -717,7 +717,8 @@ dm3.chr1 dmel''',
                             if fasta_name in trans_dict and trans_dict[fasta_name] != taxon_id:
                                 raise Exception(f"Translation file {trfn} contains conflicting duplicates: {fasta_name} -> {trans_dict[fasta_name]}, {taxon_id}")
                             trans_dict[fasta_name] = taxon_id
-            model_ids = OrderedDict(args.model_ids) # to fix the models order as on the command line
+
+            model_ids = OrderedDict(args.model_ids) # model ids with keys like 'tcmc_rnn', fix the models order as on the command line
 
             if args.in_type == 'fasta':
                 if args.sliding_window:
@@ -726,8 +727,17 @@ dm3.chr1 dmel''',
                 if args.ebony:
                     print("Ebony prediction currently does not work on fasta files")
                     return
+
+                # load models
+                models = me.model_load(trial_ids = model_ids,
+                    saved_weights_dir = args.saved_weights_basedir,
+                    log_dir = args.log_basedir,
+                    clades = args.clades,
+                    use_codons = args.use_codons,
+                    tuple_length = args.tuple_length)
+
                 preds = me.predict_on_fasta_files( \
-                    trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
+                    models = models, saved_weights_dir = args.saved_weights_basedir,
                     log_dir = args.log_basedir, clades = args.clades, input_files = args.input,
                     use_amino_acids = args.use_amino_acids, use_codons = args.use_codons,
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
@@ -740,8 +750,20 @@ dm3.chr1 dmel''',
                     raise Exception("maf input is currently only supported for binary classification")
                 if len(args.model_ids) > 1:
                     raise Exception("maf input is currently only supported for a single model.")
+
+                # load models
+                models = me.model_load(trial_ids = model_ids,
+                    saved_weights_dir = args.saved_weights_basedir,
+                    log_dir = args.log_basedir,
+                    clades = args.clades,
+                    use_codons = args.use_codons,
+                    tuple_length = args.tuple_length)
+
+                # only one model is supported for now
+                model = next(iter(models.values()))
+
                 preds, aux = me.predict_on_maf_files( \
-                    trial_ids = model_ids, saved_weights_dir = args.saved_weights_basedir,
+                    model, saved_weights_dir = args.saved_weights_basedir,
                     log_dir = args.log_basedir, clades = args.clades,
                     paths = args.input, use_codons = args.use_codons,
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
@@ -750,14 +772,27 @@ dm3.chr1 dmel''',
                     sliding_window = args.sliding_window, ebony = args.ebony)
 
             else:  # args.in_type == 'augustus'
-                # todo: exceptions
+                if args.num_classes != 2:
+                    raise Exception("Augustsus input is only supported for binary classification")
+                if len(args.model_ids) > 1:
+                    raise Exception("Augustus input is currently only supported for a single model.")
+                if args.sitewise:
+                    print("Sitewise prediction currently does not work on Augustus files")
+                    return
+                if args.sliding_window:
+                    print("Sliding window prediction currently does not work on Augustus files")
+                    return
+                if args.ebony:
+                    print("Ebony prediction currently does not work on Augustus files")
+                    return
 
-                models = me.model_load(trial_ids = model_ids, # OrderedDict of model ids with keys like 'tcmc_rnn'
-                           saved_weights_dir = args.saved_weights_basedir,
-                           log_dir = args.log_basedir,
-                           clades = args.clades,
-                           use_codons = args.use_codons,
-                           tuple_length = args.tuple_length)
+                # load models
+                models = me.model_load(trial_ids = model_ids,
+                    saved_weights_dir = args.saved_weights_basedir,
+                    log_dir = args.log_basedir,
+                    clades = args.clades,
+                    use_codons = args.use_codons,
+                    tuple_length = args.tuple_length)
 
                 # augustus prediction only with one model at a time at the moment
                 model = next(iter(models.values()))
@@ -769,7 +804,7 @@ dm3.chr1 dmel''',
                     tuple_length = args.tuple_length, tuples_overlap = args.tuples_overlap,
                     batch_size = args.batch_size, trans_dict = trans_dict
                 )
-                # todo: what to do with output
+
 
         elif args.in_type == 'tfrecord':
             if args.sitewise:
@@ -781,8 +816,16 @@ dm3.chr1 dmel''',
             if args.ebony:
                 print("Ebony prediction currently does not work on tfrecord files")
                 return
+
+            # load models
+            models = me.model_load(trial_ids = model_ids,
+                saved_weights_dir = args.saved_weights_basedir,
+                log_dir = args.log_basedir,
+                clades = args.clades,
+                use_codons = args.use_codons,
+                tuple_length = args.tuple_length)
             
-            preds = me.predict_on_tfrecord_files(trial_ids=args.model_ids,
+            preds = me.predict_on_tfrecord_files(models=models,
                                                  saved_weights_dir=args.saved_weights_basedir,
                                                  log_dir=args.log_basedir,
                                                  clades=args.clades,
@@ -815,32 +858,23 @@ dm3.chr1 dmel''',
             elif args.in_type == 'maf':
                 # write wig file
                 wg.write_preds_to_wig(preds, aux, args.out, logits=True)
-        
-        elif args.ebony:
-            # assemble hints
-            hints = []
-            for score, auxdata in zip(preds[:, 1], aux):
-                # gtf hints format: seqname, source, type, start, end, score, strand, frame, attributes in a semicolon delimited list of AUGUSTUS specific attributes in tag=value pairs
-                seqname = auxdata['seqname']
-                hint_type = auxdata['type']
-                start = auxdata['coords'][0]
-                end = auxdata['coords'][1]
-                strand = '+' if auxdata['plus_strand'] == True else '-'
-                attr = "source=X"
-                hints.append((seqname, 'clamsa', hint_type, start, end, round(score, 4), strand, '.', attr))
-            hints.sort(key = itemgetter(0,3))  # first sort seqname, then start coord
-            
-            # write to file
-            out_file = args.out if args.out else "ebony_hints.gtf"
-            with open(out_file, 'w') as f:
-                for hint in hints: 
-                    f.write('\t'.join(map(str, hint)) + '\n')
                     
-        elif args.sliding_window or args.in_type == "augustus":
-            for score, auxdata in zip(preds[:,1], aux): auxdata.update({'score': score})
+        elif args.ebony or args.sliding_window or args.in_type == "augustus":
+            for score, auxdata in zip(preds[:,1], aux): 
+                auxdata.update({'score': score})
+                auxdata["strand"] = "+" if auxdata['plus_strand'] == True else "-"
+                del auxdata["plus_strand"]
+                auxdata["start"] = auxdata['coords'][0]
+                auxdata["end"] = auxdata['coords'][1]
+                del auxdata["coords"]
             
+            # convert dict to dataframe and sort columns
             df = pd.DataFrame.from_dict(aux)
+            order = ["seqname", "type", "start", "end", "strand", "label", "score"] if args.in_type == "augustus" \
+                else ["seqname", "type", "start", "end", "strand", "score"] 
+            df = df[order]
     
+            # output
             from io import StringIO
             output = StringIO()
     
