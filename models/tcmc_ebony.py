@@ -32,9 +32,6 @@ def create_model(forest,
 
     if new_alphabet_size > 0 and gaps_as_feature:
         sys.exit(f"Error: With gaps as feature new_alphabet_size needs to be 0, instead it is {new_alphabet_size}.")
-    
-    if conv_kernelsize > tcmc_models:
-        sys.stderr.write(f"Warning: conv_kernelsize ({conv_kernelsize}) is larger than tcmc_models ({tcmc_models})! This means the convolution kernel is larger than the channels dimension of the input ot the convolution layer.\n")
 
     num_leaves = database_reader.num_leaves(forest)
     N = max(num_leaves)
