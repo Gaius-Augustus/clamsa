@@ -559,7 +559,7 @@ Use one of the following commands:
 
         parser.add_argument('input', 
                             metavar='INPUT',
-                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord  or INPUT_TYPE == augustus: A space separated list of paths to tfrecord/augustus files.\nIf INPUT_TYPE == maf: A (gzipped) MAF file. A .wig file with coding probabilities of codons in all six-frames is output. Requires --sitewise option',
+                            help='If INPUT_TYPE == fasta: A space separated list of paths to text files containing themselves paths to MSA files.\nEach MSA file contains a single alignment.\nIf INPUT_TYPE == tfrecord  or INPUT_TYPE == augustus: A space separated list of paths to tfrecord/augustus files.\nIf INPUT_TYPE == maf: A (gzipped) MAF file. A .wig file with coding probabilities of codons in all six-frames is output. Requires --sitewise, --ebony or --sliding_window option.',
                             type=file_exists,
                             nargs='+',
         )

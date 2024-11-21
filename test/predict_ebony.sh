@@ -4,7 +4,7 @@
 # Predictions are output in CSV format
 
 
-../clamsa.py predict augustus ../examples/ebony/splice.predict.aug \
+../clamsa.py predict augustus ../examples/ebony/splice.predict.aug.gz \
      --clades ../examples/ebony/diverse32mammals.nwk \
      --saved_weights_basedir ../saved_weights/ \
      --model_ids '{ "ebony" : "ebony_splice" }' \

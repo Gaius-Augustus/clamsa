@@ -4,7 +4,7 @@
 # converts samples in examples/ebony/splice.train.aug
 # and puts them in data/train_ebony/
 
-../clamsa.py convert augustus ../examples/ebony/splice.train.aug \
+../clamsa.py convert augustus ../examples/ebony/splice.train.aug.gz \
     --clades ../examples/ebony/diverse32mammals.nwk \
     --basename diverse32mammals  \
     --splits '{"train": 0.7, "val": 0.1, "test": 0.2}' \
